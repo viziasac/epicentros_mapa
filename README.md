@@ -1,43 +1,58 @@
 # Mapa dinámico de Epicentros
 
-Mapa interactivo de Perú en **Streamlit** con grillas 400×400 m coloreadas por compradores, POP y epicentros.
+Mapa interactivo de Perú en **Streamlit** — grillas 400×400 m, compradores marketplace, POP y epicentros.
 
-## Ejecución local (recomendado)
+## Links
+
+| Entorno | URL |
+|---------|-----|
+| **Repo** | https://github.com/viziasac/epicentros_mapa |
+| **Local** | http://localhost:8501 |
+| **Streamlit Cloud** | [share.streamlit.io](https://share.streamlit.io) → `viziasac/epicentros_mapa` → `streamlit_app.py` |
+
+## Ejecución local
 
 ```powershell
 pip install -r requirements.txt
 streamlit run streamlit_app.py
 ```
 
-Abre **http://localhost:8501** en tu navegador.
+## Despliegue Streamlit Cloud (sin configuración extra)
 
-> **No uses localtunnel/loca.lt** con Streamlit: rompe la carga de módulos JS. Para compartir con otras personas usa **Streamlit Cloud** (abajo).
+1. Conecta el repo `viziasac/epicentros_mapa`
+2. Main file: **`streamlit_app.py`**
+3. Python: **3.11**
+4. **Deploy** — el dataset ya está en `data/base_epicentros_full_grid400m.parquet` (~14 MB)
 
-## Despliegue en Streamlit Cloud (link público estable)
+No requiere secrets ni túneles (`loca.lt` rompe Streamlit).
 
-1. Repo: **https://github.com/viziasac/epicentros_mapa**
-2. Ve a [share.streamlit.io](https://share.streamlit.io) → **New app**
-3. Configura:
-   - Repository: `viziasac/epicentros_mapa`
-   - Branch: `main`
-   - Main file: `streamlit_app.py`
-4. **Deploy** — no requiere secrets (el dataset va en `data/base_epicentros_full_grid400m.parquet`)
+## Archivos del proyecto
 
-El link será algo como: `https://epicentros-mapa.streamlit.app`
+```
+streamlit_app.py              # Entry point Cloud
+mapa_epicentros.py            # UI Streamlit
+data/
+  base_epicentros_full_grid400m.parquet   # Dataset deploy
+epicentros/
+  config.py data.py filters.py grid.py
+  mapa.py pipeline.py scoring.py
+scripts/
+  verify_app.py               # Auditoría completa
+  export_parquet.py           # Regenerar parquet desde CSV
+requirements.txt
+.streamlit/config.toml
+.github/workflows/verify.yml    # CI en cada push
+```
 
-## Datos
+**No incluidos (gitignore):** `base_epicentros_full.csv` (~83 MB, solo desarrollo local).
 
-| Archivo | Uso |
-|---------|-----|
-| `data/base_epicentros_full_grid400m.parquet` | Dataset incluido en repo (~14 MB, listo para Cloud) |
-| `base_epicentros_full.csv` | Solo desarrollo local (no en git) |
-
-Regenerar parquet tras actualizar CSV:
+## Auditoría
 
 ```powershell
-python scripts/export_parquet.py
-Copy-Item base_epicentros_full_grid400m.parquet data\ -Force
+python scripts/verify_app.py
 ```
+
+Valida: layout, imports, colores, carga de datos, simulación Cloud y render del mapa.
 
 ## Colores de grilla
 
@@ -49,20 +64,15 @@ Copy-Item base_epicentros_full_grid400m.parquet data\ -Force
 | Naranja | Sin epicentro · ≥% POP alto |
 | Rojo | Resto |
 
-**Defaults:** 10% compradores · POP 0.50 · 30% POP alto en grilla.
+**Defaults:** 10% compradores · POP 0.50 · 30% POP alto.
 
-## Estructura
+## Regenerar datos
 
-```
-streamlit_app.py          # Entry point Streamlit Cloud
-mapa_epicentros.py        # UI principal
-data/                     # Parquet de deploy
-epicentros/               # Pipeline, mapa, scoring
-scripts/verify_app.py       # Auditoría local
-```
-
-## Auditoría
+Si actualizas el CSV local:
 
 ```powershell
-python scripts/verify_app.py
+python scripts/export_parquet.py
+git add data/base_epicentros_full_grid400m.parquet
+git commit -m "Actualizar dataset"
+git push
 ```

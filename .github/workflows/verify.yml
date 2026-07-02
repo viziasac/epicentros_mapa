@@ -19,5 +19,5 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Run audit (sin dataset)
+      - name: Auditoría completa (con parquet en repo)
         run: python scripts/verify_app.py

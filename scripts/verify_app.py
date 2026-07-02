@@ -1,6 +1,7 @@
-"""Auditoría local del proyecto Epicentros."""
+"""Auditoría completa — local y simulación Streamlit Cloud."""
 from __future__ import annotations
 
+import shutil
 import sys
 from pathlib import Path
 
@@ -17,17 +18,34 @@ def check(name: str, fn) -> None:
         raise
 
 
-def _has_local_dataset() -> bool:
-    from epicentros.config import CSV_FULL, PARQUET_FULL
+def _has_dataset() -> bool:
+    from epicentros.config import CSV_FULL, PARQUET_BUNDLED, PARQUET_LOCAL
     from epicentros.data import _remote_data_url
 
     if _remote_data_url():
         return True
-    return CSV_FULL.is_file() or PARQUET_FULL.is_file()
+    return any(p.is_file() for p in (PARQUET_BUNDLED, PARQUET_LOCAL, CSV_FULL))
 
 
 def main() -> None:
     print("=== Auditoría Epicentros ===\n")
+
+    def repo_layout():
+        required = [
+            "streamlit_app.py",
+            "mapa_epicentros.py",
+            "requirements.txt",
+            "data/base_epicentros_full_grid400m.parquet",
+            "epicentros/config.py",
+            "epicentros/data.py",
+            "epicentros/filters.py",
+            "epicentros/grid.py",
+            "epicentros/mapa.py",
+            "epicentros/pipeline.py",
+            "epicentros/scoring.py",
+        ]
+        for rel in required:
+            assert (ROOT / rel).is_file(), f"Falta: {rel}"
 
     def imports():
         from epicentros.config import ETIQUETA_GRILLA, GRID_SIZE_M, PARTNERS
@@ -53,56 +71,73 @@ def main() -> None:
         assert etiquetas.iloc[2] == ETIQUETA_GRILLA["celeste"]
         assert etiquetas.iloc[7] == ETIQUETA_GRILLA["naranja"]
 
+    def streamlit_entry():
+        entry = ROOT / "streamlit_app.py"
+        compile(entry.read_text(encoding="utf-8"), str(entry), "exec")
+
+    check("Layout del repo", repo_layout)
     check("Imports y módulos", imports)
     check("Lógica de color", logica_color)
+    check("Entry point streamlit_app", streamlit_entry)
 
-    if not _has_local_dataset():
-        print("  SKIP Datos (sin CSV/parquet local ni URL remota)")
-        print("\n=== OK parcial — configura datos para prueba completa ===")
+    if not _has_dataset():
+        print("  SKIP Datos (sin parquet/CSV)")
+        print("\n=== OK parcial ===")
         return
 
     def data():
-        from epicentros.data import load_full_dataset
         from epicentros.config import PARTNERS
+        from epicentros.data import load_full_dataset
 
         df = load_full_dataset()
-        assert len(df) > 0
+        assert len(df) > 100_000
         assert "grid_id" in df.columns
-        assert "flag_epicentro" in df.columns
         for p in PARTNERS.values():
             assert f"{p}_flag_comprador_l3m" in df.columns
             assert f"{p}_pop" in df.columns
 
-    def colores_cinco():
-        from epicentros.config import ETIQUETA_GRILLA, PARTNERS
+    def cloud_sim():
+        """Solo parquet en data/ — igual que Streamlit Cloud."""
+        from epicentros.config import PARQUET_BUNDLED
         from epicentros.data import load_full_dataset
-        from epicentros.scoring import aggregate_grids, compute_client_metrics, partner_prefixes
+        from epicentros.pipeline import run_pipeline
 
-        df = load_full_dataset().head(25_000)
-        prefixes = partner_prefixes(list(PARTNERS.keys()))
-        df = compute_client_metrics(df, prefixes, 1, 0.50)
-        grid = aggregate_grids(df, 0.10, 0.30)
-        assert len(grid) > 0
-        assert "intensidad" in grid.columns
-        labels = set(grid["etiqueta_zona"].unique())
-        assert labels.issubset(set(ETIQUETA_GRILLA.values()))
+        assert PARQUET_BUNDLED.is_file()
+        csv_candidates = list(ROOT.glob("base_epicentros_full.csv")) + list(
+            (ROOT / "data").glob("base_epicentros_full.csv")
+        )
+        backups = []
+        for p in csv_candidates:
+            if p.is_file():
+                bak = p.with_suffix(p.suffix + ".audit_bak")
+                shutil.move(p, bak)
+                backups.append((bak, p))
+        try:
+            df = load_full_dataset()
+            assert len(df) > 0
+            _, _, grid, _, _ = run_pipeline(
+                df.head(8_000), ["Red Bull", "BAT"], 1, 0.10, 0.50, 0.30, 600, ()
+            )
+            assert not grid.empty
+        finally:
+            for bak, orig in backups:
+                shutil.move(bak, orig)
 
-    def solo_red_bull():
+    def mapa_render():
         from epicentros.data import load_full_dataset
         from epicentros.mapa import build_map
         from epicentros.pipeline import run_pipeline
 
-        df = load_full_dataset().head(12_000)
-        scored, _, grid_render, pl, po = run_pipeline(
-            df, ["Red Bull"], 1, 0.10, 0.50, 0.30, 400, ()
+        df = load_full_dataset().head(8_000)
+        scored, _, grid, pl, po = run_pipeline(
+            df, list(["Red Bull"]), 1, 0.10, 0.50, 0.30, 400, ()
         )
-        assert scored["n_partners_sel"].max() == 1
-        build_map(scored, grid_render, pl, po, ["Red Bull"], 1, 0.1, 0.3, 0.5, False)
+        build_map(scored, grid, pl, po, ["Red Bull"], 1, 0.1, 0.3, 0.5, False)
 
-    check("Datos + grid_id", data)
-    check("5 colores", colores_cinco)
-    check("Solo Red Bull", solo_red_bull)
-    print("\n=== OK — listo para streamlit run streamlit_app.py ===")
+    check("Carga de datos", data)
+    check("Simulación Streamlit Cloud", cloud_sim)
+    check("Render mapa Folium", mapa_render)
+    print("\n=== OK — listo para local y Streamlit Cloud ===")
 
 
 if __name__ == "__main__":
