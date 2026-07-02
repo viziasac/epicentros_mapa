@@ -15,13 +15,11 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Datos locales (no subir a GitHub — usar secrets en Streamlit Cloud)
-*.parquet
-data/*.csv
-data/*.parquet
+# Datos locales (CSV grande en raíz)
 base_epicentros_*.csv
-base_epicentros_*.parquet
 clientes_gemelos_epicentro.*
+*.parquet
+!data/base_epicentros_full_grid400m.parquet
 
 # Caché de descarga remota
 .cache/

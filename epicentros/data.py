@@ -12,9 +12,10 @@ from epicentros.config import (
     COMPRADOR_L3M,
     CSV_FULL,
     ENV_DATA_URL,
-    GRID_SIZE_M,
     NO_COMPRADOR_L3M,
+    PARQUET_BUNDLED,
     PARQUET_FULL,
+    PARQUET_LOCAL,
     PARTNERS,
     data_setup_hint,
 )
@@ -101,30 +102,36 @@ def _load_from_path(path: Path) -> pd.DataFrame:
     return _load_from_csv(path)
 
 
+def _resolve_local_parquet() -> Path | None:
+    for path in (PARQUET_BUNDLED, PARQUET_FULL, PARQUET_LOCAL):
+        if path.is_file():
+            return path
+    return None
+
+
 def load_full_dataset() -> pd.DataFrame:
     remote = _remote_data_url()
     if remote:
-        remote_path = _download_remote(remote)
-        return _load_from_path(remote_path)
+        return _load_from_path(_download_remote(remote))
 
-    if PARQUET_FULL.is_file() and (
-        not CSV_FULL.is_file()
-        or PARQUET_FULL.stat().st_mtime >= CSV_FULL.stat().st_mtime
-    ):
+    parquet_path = _resolve_local_parquet()
+    if parquet_path is not None:
+        if not CSV_FULL.is_file() or parquet_path.stat().st_mtime >= CSV_FULL.stat().st_mtime:
+            try:
+                return _load_from_parquet(parquet_path)
+            except Exception:
+                pass
+
+    if CSV_FULL.is_file():
+        df = _load_from_csv(CSV_FULL)
         try:
-            return _load_from_parquet(PARQUET_FULL)
+            CACHE_DIR.mkdir(parents=True, exist_ok=True)
+            out = PARQUET_LOCAL
+            df.to_parquet(out, index=False)
         except Exception:
             pass
+        return df
 
-    if not CSV_FULL.is_file():
-        raise FileNotFoundError(
-            f"No se encontró dataset local ({CSV_FULL}). {data_setup_hint()}"
-        )
-
-    df = _load_from_csv(CSV_FULL)
-    try:
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(PARQUET_FULL, index=False)
-    except Exception:
-        pass
-    return df
+    raise FileNotFoundError(
+        f"No se encontró dataset. {data_setup_hint()}"
+    )

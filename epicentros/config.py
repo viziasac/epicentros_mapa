@@ -5,14 +5,20 @@ ROOT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = ROOT_DIR / "data"
 CACHE_DIR = ROOT_DIR / ".cache"
 
+GRID_SIZE_M = 400
+PARQUET_NAME = f"base_epicentros_full_grid{GRID_SIZE_M}m.parquet"
+
+# Parquet incluido en repo (deploy Streamlit Cloud sin secrets)
+PARQUET_BUNDLED = DATA_DIR / PARQUET_NAME
+
 CSV_FULL = DATA_DIR / "base_epicentros_full.csv"
 if not CSV_FULL.is_file():
     CSV_FULL = ROOT_DIR / "base_epicentros_full.csv"
 
-GRID_SIZE_M = 400
-PARQUET_FULL = CSV_FULL.with_name(f"{CSV_FULL.stem}_grid{GRID_SIZE_M}m.parquet")
+# Parquet local generado o en raíz (desarrollo)
+PARQUET_LOCAL = ROOT_DIR / PARQUET_NAME
+PARQUET_FULL = PARQUET_BUNDLED if PARQUET_BUNDLED.is_file() else PARQUET_LOCAL
 
-# URL remota (Streamlit secrets o variable de entorno) — ver README
 ENV_DATA_URL = "EPICENTROS_DATA_URL"
 
 PARTNERS = {
@@ -33,7 +39,6 @@ DEFAULT_UMBRAL_PCT_POP = 0.30
 MIN_CLIENTES_GRILLA = 2
 DEFAULT_MAX_GRILLAS = 8_000
 
-# Verde | Azul | Celeste | Naranja | Rojo
 COLOR_GRILLA = {
     "verde": "#16a34a",
     "azul": "#2563eb",
@@ -56,6 +61,6 @@ MAX_GRILLAS_RENDER = 12_000
 
 def data_setup_hint() -> str:
     return (
-        "Coloca `base_epicentros_full.csv` en la raíz o en `data/`, "
-        "o configura `EPICENTROS_DATA_URL` / secrets `[data] parquet_url` (ver README)."
+        f"Coloca `{PARQUET_NAME}` en `data/`, un CSV en la raíz, "
+        "o configura `EPICENTROS_DATA_URL` / secrets `[data] parquet_url`."
     )
