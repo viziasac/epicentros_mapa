@@ -41,6 +41,7 @@ def main() -> None:
             "epicentros/data.py",
             "epicentros/filters.py",
             "epicentros/grid.py",
+            "epicentros/geojson.py",
             "epicentros/mapa.py",
             "epicentros/pipeline.py",
             "epicentros/scoring.py",
@@ -135,7 +136,39 @@ def main() -> None:
         )
         build_map(scored, grid, pl, po, ["Red Bull"], 1, 0.1, 0.3, 0.5, False)
 
+    def filtro_colores_canonico():
+        from epicentros.config import ETIQUETA_GRILLA
+        from epicentros.data import load_full_dataset
+        from epicentros.pipeline import run_pipeline
+        from epicentros.scoring import canonical_etiqueta, filter_grids_by_color
+
+        assert canonical_etiqueta("Verde - compradores") == ETIQUETA_GRILLA["verde"]
+        assert canonical_etiqueta("POC Inestable Epicentro") is None
+
+        df = load_full_dataset().head(8_000)
+        _, grid_full, _, _, _ = run_pipeline(
+            df, ["Red Bull"], 1, 0.10, 0.50, 0.30, 0, ()
+        )
+        assert not grid_full.empty
+
+        filtered = filter_grids_by_color(grid_full, ["Verde - compradores"])
+        assert not filtered.empty
+        assert set(filtered["etiqueta_zona"].unique()) == {ETIQUETA_GRILLA["verde"]}
+
+        _, _, grid_bad, _, _ = run_pipeline(
+            df,
+            ["Red Bull"],
+            1,
+            0.10,
+            0.50,
+            0.30,
+            0,
+            ("Verde - compradores",),
+        )
+        assert not grid_bad.empty
+
     check("Carga de datos", data)
+    check("Filtro colores canónico", filtro_colores_canonico)
     check("Simulación Streamlit Cloud", cloud_sim)
     check("Render mapa Folium", mapa_render)
     print("\n=== OK — listo para local y Streamlit Cloud ===")

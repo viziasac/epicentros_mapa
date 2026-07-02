@@ -10,6 +10,19 @@ Mapa interactivo de Perú en **Streamlit** — grillas 400×400 m, compradores m
 | **Local** | http://localhost:8501 |
 | **Streamlit Cloud** | [share.streamlit.io](https://share.streamlit.io) → `viziasac/epicentros_mapa` → `streamlit_app.py` |
 
+## Compartir desde tu PC (ngrok)
+
+```powershell
+# 1. Token gratis: https://dashboard.ngrok.com/get-started/your-authtoken
+copy .env.example .env
+# Edita .env → NGROK_AUTHTOKEN=tu_token
+
+# 2. Un solo comando (Streamlit + túnel)
+.\scripts\run_ngrok.ps1
+```
+
+Te mostrará el link `https://xxxx.ngrok-free.app` para compartir.
+
 ## Ejecución local
 
 ```powershell

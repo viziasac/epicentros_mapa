@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pandas as pd
 
@@ -135,10 +137,45 @@ def aggregate_grids(
     return grid
 
 
+_DASH_PATTERN = re.compile(r"[\u2010-\u2015\-–—]")
+
+
+def _normalize_dashes(text: str) -> str:
+    return _DASH_PATTERN.sub("—", text.strip())
+
+
+def canonical_etiqueta(label: str) -> str | None:
+    """Mapea variantes de guión / etiquetas viejas a la etiqueta canónica."""
+    if not label:
+        return None
+    raw = label.strip()
+    if raw in ETIQUETA_GRILLA.values():
+        return raw
+    normalized = _normalize_dashes(raw)
+    for canon in ETIQUETA_GRILLA.values():
+        if _normalize_dashes(canon) == normalized:
+            return canon
+    return None
+
+
+def canonical_etiquetas(labels: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for label in labels:
+        canon = canonical_etiqueta(label)
+        if canon and canon not in seen:
+            seen.add(canon)
+            out.append(canon)
+    return out
+
+
 def filter_grids_by_color(grid: pd.DataFrame, colores_sel: list[str] | None) -> pd.DataFrame:
     if not colores_sel:
         return grid
-    return grid[grid["etiqueta_zona"].isin(colores_sel)].copy()
+    canon = canonical_etiquetas(colores_sel)
+    if not canon:
+        return grid
+    return grid[grid["etiqueta_zona"].isin(canon)].copy()
 
 
 def limit_grids_for_render(

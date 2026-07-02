@@ -31,10 +31,23 @@ from epicentros.data import load_full_dataset
 from epicentros.filters import apply_geo_filters
 from epicentros.mapa import build_map
 from epicentros.pipeline import clamp_min_partners, run_pipeline
+from epicentros.scoring import canonical_etiqueta
 
 ETIQUETAS_GRILLA = list(ETIQUETA_GRILLA.values())
+_ETIQUETAS_SET = set(ETIQUETAS_GRILLA)
 _COLOR_KEYS = ("verde", "azul", "celeste", "naranja", "rojo")
-_DEFAULTS_VERSION = 3
+_DEFAULTS_VERSION = 4
+
+
+def _sanitize_colores_sel(raw: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for label in raw:
+        canon = canonical_etiqueta(label) if label not in _ETIQUETAS_SET else label
+        if canon and canon in _ETIQUETAS_SET and canon not in seen:
+            seen.add(canon)
+            out.append(canon)
+    return out if out else list(ETIQUETAS_GRILLA)
 
 
 def _init_session_state() -> None:
@@ -220,6 +233,7 @@ st.sidebar.slider(
 st.sidebar.multiselect(
     "Mostrar grillas",
     ETIQUETAS_GRILLA,
+    default=ETIQUETAS_GRILLA,
     key="colores_sel",
 )
 
@@ -255,7 +269,9 @@ min_partners_compradores = int(st.session_state["min_partners_compradores"])
 umbral_pct = float(st.session_state["umbral_pct"])
 umbral_pop = float(st.session_state["umbral_pop"])
 umbral_pct_pop = float(st.session_state["umbral_pct_pop"])
-colores_sel = list(st.session_state["colores_sel"])
+colores_sel = _sanitize_colores_sel(list(st.session_state["colores_sel"]))
+if colores_sel != list(st.session_state["colores_sel"]):
+    st.session_state["colores_sel"] = colores_sel
 canal_sel = st.session_state["canal_sel"]
 gerencias_key = tuple(st.session_state["gerencias_sel"])
 solo_epicentro = bool(st.session_state["solo_epicentro"])
@@ -281,9 +297,18 @@ if result is None:
 
 df, grid_full, grid_stats, paso_lat, paso_lon = result
 
-if grid_stats.empty:
-    st.warning(f"No hay grillas con ≥{MIN_CLIENTES_GRILLA} clientes.")
+if grid_full.empty:
+    st.warning(
+        f"No hay grillas con ≥{MIN_CLIENTES_GRILLA} clientes con los filtros actuales."
+    )
     st.stop()
+if grid_stats.empty:
+    st.warning(
+        "Ninguna grilla coincide con los colores seleccionados. "
+        "Se restablecieron todos los colores."
+    )
+    st.session_state["colores_sel"] = list(ETIQUETAS_GRILLA)
+    st.rerun()
 
 render_kpis(df, grid_stats, grid_full)
 
