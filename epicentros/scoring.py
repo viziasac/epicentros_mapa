@@ -5,11 +5,11 @@ import pandas as pd
 
 from epicentros.config import (
     COLOR_GRILLA,
-    GRID_SIZE_M,
+    COMPRADOR_L3M,
+    ETIQUETA_GRILLA,
     MAX_GRILLAS_RENDER,
     MIN_CLIENTES_GRILLA,
     PARTNERS,
-    SEGMENTO_ESTABLE,
 )
 
 
@@ -17,124 +17,118 @@ def partner_prefixes(selected_partners: list[str]) -> list[str]:
     return [PARTNERS[p] for p in selected_partners if p in PARTNERS]
 
 
-def _grid_step(lat_mean: float) -> tuple[float, float]:
-    paso_lat = GRID_SIZE_M / 111_320
-    paso_lon = paso_lat / np.cos(np.radians(lat_mean))
-    return paso_lat, paso_lon
-
-
-def assign_grid(df: pd.DataFrame) -> tuple[pd.DataFrame, float, float]:
-    paso_lat, paso_lon = _grid_step(df["latitud"].mean())
-    out = df.copy()
-    out["grid_lat"] = (out["latitud"] / paso_lat).round() * paso_lat
-    out["grid_lon"] = (out["longitud"] / paso_lon).round() * paso_lon
-    return out, paso_lat, paso_lon
-
-
-def compute_client_scores(
+def compute_client_metrics(
     df: pd.DataFrame,
     prefixes: list[str],
-    min_partners_estables: int,
+    min_partners_compradores: int,
+    umbral_pop: float,
 ) -> pd.DataFrame:
     if not prefixes:
         raise ValueError("Selecciona al menos un partner.")
 
-    estable_flags = []
-    nr_partner_cols = []
+    comprador_flags = []
+    pop_cols = []
 
     for p in prefixes:
-        seg_col = f"{p}_segmento_resumen"
-        if seg_col not in df.columns:
-            raise KeyError(f"Columna requerida no encontrada: {seg_col}")
-        seg = df[seg_col].fillna("No Comprador").astype(str).str.strip()
-        estable_flags.append((seg == SEGMENTO_ESTABLE).astype(int))
-        nr_partner_cols.append(df[f"{p}_nr_l3m"])
+        flag_col = f"{p}_flag_comprador_l3m"
+        pop_col = f"{p}_pop"
+        if flag_col not in df.columns:
+            raise KeyError(f"Columna requerida no encontrada: {flag_col}")
+        flags = df[flag_col].fillna("").astype(str).str.strip()
+        comprador_flags.append((flags == COMPRADOR_L3M).astype(np.int8))
+        pop_cols.append(df[pop_col].to_numpy(dtype=float))
 
-    estable_mat = np.column_stack(estable_flags)
+    comprador_mat = np.column_stack(comprador_flags)
+    pop_mat = np.column_stack(pop_cols)
 
     out = df.copy()
-    out["n_partners_sel"] = len(prefixes)
-    out["partners_estables"] = estable_mat.sum(axis=1)
-    out["nr_partners_sel_l3m"] = np.column_stack(nr_partner_cols).sum(axis=1)
-    out["cumple_umbral_estables"] = (
-        out["partners_estables"] >= min_partners_estables
-    ).astype(int)
+    n = len(prefixes)
+    out["n_partners_sel"] = n
+    out["partners_compradores"] = comprador_mat.sum(axis=1)
+    out["pop_promedio"] = pop_mat.mean(axis=1)
+    out["cumple_comprador"] = (
+        out["partners_compradores"] >= min_partners_compradores
+    ).astype(np.int8)
+    out["cumple_pop_alto"] = (out["pop_promedio"] >= umbral_pop).astype(np.int8)
     return out
 
 
-def _grilla_es_fuerte(
-    grid: pd.DataFrame,
+def _color_grid(
+    pct_compradores: pd.Series,
+    pct_pop_alto: pd.Series,
+    n_epicentros: pd.Series,
     umbral_pct: float,
-    umbral_nr_marketplace: float,
-    umbral_nr_backus: float,
-) -> pd.Series:
-    por_pct = grid["pct_cumplen"] >= umbral_pct
-    por_mp = (
-        grid["nr_marketplace"] >= umbral_nr_marketplace
-        if umbral_nr_marketplace > 0
-        else pd.Series(False, index=grid.index)
+    umbral_pct_pop: float,
+) -> tuple[pd.Series, pd.Series, pd.Series]:
+    tiene_epic = n_epicentros >= 1
+    sin_epic = n_epicentros == 0
+    fuerte_comp = pct_compradores >= umbral_pct
+    fuerte_pop = pct_pop_alto >= umbral_pct_pop
+
+    # Prioridad: celeste > azul > verde > naranja > rojo
+    es_celeste = tiene_epic & fuerte_pop
+    es_azul = tiene_epic & fuerte_comp & ~es_celeste
+    es_verde = sin_epic & fuerte_comp
+    es_naranja = sin_epic & fuerte_pop & ~es_verde
+
+    color = np.select(
+        [es_celeste, es_azul, es_verde, es_naranja],
+        [
+            COLOR_GRILLA["celeste"],
+            COLOR_GRILLA["azul"],
+            COLOR_GRILLA["verde"],
+            COLOR_GRILLA["naranja"],
+        ],
+        default=COLOR_GRILLA["rojo"],
     )
-    por_backus = (
-        grid["nr_backus"] >= umbral_nr_backus
-        if umbral_nr_backus > 0
-        else pd.Series(False, index=grid.index)
+
+    etiqueta = np.select(
+        [es_celeste, es_azul, es_verde, es_naranja],
+        [
+            ETIQUETA_GRILLA["celeste"],
+            ETIQUETA_GRILLA["azul"],
+            ETIQUETA_GRILLA["verde"],
+            ETIQUETA_GRILLA["naranja"],
+        ],
+        default=ETIQUETA_GRILLA["rojo"],
     )
-    return por_pct | por_mp | por_backus
+
+    intensidad = np.clip(
+        np.maximum(pct_compradores.to_numpy(), pct_pop_alto.to_numpy()), 0, 1
+    )
+
+    return pd.Series(color), pd.Series(etiqueta), pd.Series(intensidad)
 
 
 def aggregate_grids(
     df: pd.DataFrame,
     umbral_pct: float,
-    umbral_nr_marketplace: float,
-    umbral_nr_backus: float,
+    umbral_pct_pop: float,
 ) -> pd.DataFrame:
-    grid = df.groupby(["grid_lat", "grid_lon"], as_index=False).agg(
+    grid = df.groupby("grid_id", as_index=False).agg(
+        grid_lat=("grid_lat", "first"),
+        grid_lon=("grid_lon", "first"),
         total_clientes=("cliente_id", "count"),
-        clientes_cumplen=("cumple_umbral_estables", "sum"),
-        nr_marketplace=("total_soles_marketplace_l3m", "sum"),
-        nr_backus=("total_soles_backus_l3m", "sum"),
-        nr_partners=("nr_partners_sel_l3m", "sum"),
-        pocs_listado=("es_poc", "sum"),
-        pocs_epicentro=("es_epicentro", "sum"),
-        pocs_gemelo=("es_gemelo", "sum"),
+        clientes_compradores=("cumple_comprador", "sum"),
+        clientes_pop_alto=("cumple_pop_alto", "sum"),
+        n_epicentros=("es_epicentro", "sum"),
+        pop_promedio_grilla=("pop_promedio", "mean"),
     )
 
     grid = grid[grid["total_clientes"] >= MIN_CLIENTES_GRILLA].copy()
-    grid["pct_cumplen"] = grid["clientes_cumplen"] / grid["total_clientes"]
+    grid["pct_compradores"] = grid["clientes_compradores"] / grid["total_clientes"]
+    grid["pct_pop_alto"] = grid["clientes_pop_alto"] / grid["total_clientes"]
 
-    base_fuerte = _grilla_es_fuerte(
-        grid, umbral_pct, umbral_nr_marketplace, umbral_nr_backus
+    color, etiqueta, intensidad = _color_grid(
+        grid["pct_compradores"],
+        grid["pct_pop_alto"],
+        grid["n_epicentros"],
+        umbral_pct,
+        umbral_pct_pop,
     )
-    # Epicentro + Gemelo = POC del listado
-    tiene_poc = grid["pocs_listado"] >= 1
-
-    grid["color_grilla"] = np.select(
-        [
-            base_fuerte & tiene_poc,
-            base_fuerte & ~tiene_poc,
-            ~base_fuerte & tiene_poc,
-        ],
-        [
-            COLOR_GRILLA["fuerte_epicentro"],
-            COLOR_GRILLA["fuerte_sin_epicentro"],
-            COLOR_GRILLA["debil_epicentro"],
-        ],
-        default=COLOR_GRILLA["debil_sin_epicentro"],
-    )
-
-    grid["etiqueta_zona"] = np.select(
-        [
-            base_fuerte & tiene_poc,
-            base_fuerte & ~tiene_poc,
-            ~base_fuerte & tiene_poc,
-        ],
-        [
-            "Fuerte + POC",
-            "Fuerte sin POC",
-            "Débil + POC",
-        ],
-        default="Débil sin POC",
-    )
+    grid["color_grilla"] = color.to_numpy()
+    grid["etiqueta_zona"] = etiqueta.to_numpy()
+    grid["intensidad"] = intensidad.to_numpy()
 
     return grid
 
@@ -153,10 +147,9 @@ def limit_grids_for_render(
 
     out = grid.copy()
     out["_prioridad"] = (
-        out["nr_marketplace"]
-        + out["nr_backus"] * 0.1
-        + out["pct_cumplen"] * 100
-        + out["pocs_listado"] * 10
+        out["intensidad"] * 100
+        + out["n_epicentros"] * 10
+        + out["total_clientes"]
     )
     return (
         out.sort_values("_prioridad", ascending=False)

@@ -15,6 +15,13 @@ venv/
 .DS_Store
 Thumbs.db
 
-# Datos locales opcionales (descomenta si no quieres subir el CSV grande)
-# data/
-# base_epicentros_marketplace.csv
+# Datos locales (no subir a GitHub — usar secrets en Streamlit Cloud)
+*.parquet
+data/*.csv
+data/*.parquet
+base_epicentros_*.csv
+base_epicentros_*.parquet
+clientes_gemelos_epicentro.*
+
+# Caché de descarga remota
+.cache/

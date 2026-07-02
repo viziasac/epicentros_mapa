@@ -1,8 +1,24 @@
 from __future__ import annotations
 
+import hashlib
+import os
+import urllib.request
+from pathlib import Path
+
 import pandas as pd
 
-from epicentros.config import CSV_EPICENTROS, CSV_MARKETPLACE, PARTNERS
+from epicentros.config import (
+    CACHE_DIR,
+    COMPRADOR_L3M,
+    CSV_FULL,
+    ENV_DATA_URL,
+    GRID_SIZE_M,
+    NO_COMPRADOR_L3M,
+    PARQUET_FULL,
+    PARTNERS,
+    data_setup_hint,
+)
+from epicentros.grid import assign_grid_columns
 
 
 def _coerce_numeric(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -12,11 +28,35 @@ def _coerce_numeric(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     return df
 
 
-def load_marketplace() -> pd.DataFrame:
-    if not CSV_MARKETPLACE.is_file():
-        raise FileNotFoundError(f"No se encontró: {CSV_MARKETPLACE}")
+def _remote_data_url() -> str | None:
+    url = os.environ.get(ENV_DATA_URL, "").strip()
+    if url:
+        return url
+    try:
+        import streamlit as st
 
-    df = pd.read_csv(CSV_MARKETPLACE, low_memory=False)
+        data_secrets = st.secrets.get("data", {})
+        return (
+            data_secrets.get("parquet_url")
+            or data_secrets.get("csv_url")
+            or data_secrets.get("url")
+        )
+    except Exception:
+        return None
+
+
+def _download_remote(url: str) -> Path:
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    ext = ".parquet" if ".parquet" in url.lower() else ".csv"
+    name = hashlib.md5(url.encode()).hexdigest()[:16]
+    dest = CACHE_DIR / f"remote_{name}{ext}"
+    if not dest.is_file():
+        urllib.request.urlretrieve(url, dest)
+    return dest
+
+
+def _prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    df = df.copy()
     df["cliente_id"] = df["cliente_id"].astype(str).str.strip()
     df = df.dropna(subset=["latitud", "longitud"])
 
@@ -25,69 +65,66 @@ def load_marketplace() -> pd.DataFrame:
         "longitud",
         "total_soles_backus_l3m",
         "total_soles_marketplace_l3m",
+        "flag_epicentro",
     ]
     for prefix in PARTNERS.values():
         numeric_cols.extend(
-            [f"{prefix}_cajas_l3m", f"{prefix}_nr_l3m", f"{prefix}_nr_prom_l3m"]
+            [f"{prefix}_cajas_l3m", f"{prefix}_nr_l3m", f"{prefix}_pop"]
         )
 
+    df = _coerce_numeric(df, numeric_cols)
+
     for prefix in PARTNERS.values():
-        col = f"{prefix}_segmento_resumen"
+        col = f"{prefix}_flag_comprador_l3m"
         if col in df.columns:
-            df[col] = df[col].fillna("No Comprador").astype(str).str.strip()
+            df[col] = df[col].fillna(NO_COMPRADOR_L3M).astype(str).str.strip()
 
-    return _coerce_numeric(df, numeric_cols)
-
-
-def load_epicentros() -> pd.DataFrame:
-    if not CSV_EPICENTROS.is_file():
-        raise FileNotFoundError(f"No se encontró: {CSV_EPICENTROS}")
-
-    df = pd.read_csv(CSV_EPICENTROS, low_memory=False)
-    df["cliente_id"] = df["cliente_id"].astype(str).str.strip()
-    return df.drop_duplicates(subset=["cliente_id"])
-
-
-def merge_datasets(marketplace: pd.DataFrame, epicentros: pd.DataFrame) -> pd.DataFrame:
-    cols_epic = ["cliente_id", "Epicentro", "Tipo", "Zona", "Supervisor"]
-    cols_epic = [c for c in cols_epic if c in epicentros.columns]
-
-    df = marketplace.merge(epicentros[cols_epic], on="cliente_id", how="left")
-    df["epicentro"] = (
-        df["Epicentro"].fillna("Sin Epicentro") if "Epicentro" in df.columns else "Sin Epicentro"
-    )
-
-    if "Tipo" in df.columns:
-        tipo_norm = df["Tipo"].fillna("").astype(str).str.strip().str.upper()
-        df["tipo"] = df["Tipo"].fillna("Sin Tipo").astype(str).str.strip()
-        df["en_listado"] = (tipo_norm != "").astype(int)
-        df["es_epicentro"] = (tipo_norm == "EPICENTRO").astype(int)
-        df["es_gemelo"] = (tipo_norm == "GEMELO").astype(int)
-        # Epicentro + Gemelo cuentan como POC del listado para grillas
-        df["es_poc"] = ((tipo_norm == "EPICENTRO") | (tipo_norm == "GEMELO")).astype(int)
-    else:
-        df["tipo"] = "Sin Tipo"
-        df["en_listado"] = 0
-        df["es_epicentro"] = 0
-        df["es_gemelo"] = 0
-        df["es_poc"] = 0
-
-    df["en_epicentro"] = df["en_listado"]
+    df["es_epicentro"] = df["flag_epicentro"].astype(int)
+    df, _, _ = assign_grid_columns(df)
     return df
 
 
+def _load_from_csv(path: Path) -> pd.DataFrame:
+    return _prepare_dataframe(pd.read_csv(path, low_memory=False))
+
+
+def _load_from_parquet(path: Path) -> pd.DataFrame:
+    df = pd.read_parquet(path)
+    if "grid_id" not in df.columns:
+        df = _prepare_dataframe(df)
+    return df
+
+
+def _load_from_path(path: Path) -> pd.DataFrame:
+    if path.suffix.lower() == ".parquet":
+        return _load_from_parquet(path)
+    return _load_from_csv(path)
+
+
 def load_full_dataset() -> pd.DataFrame:
-    marketplace = load_marketplace()
+    remote = _remote_data_url()
+    if remote:
+        remote_path = _download_remote(remote)
+        return _load_from_path(remote_path)
+
+    if PARQUET_FULL.is_file() and (
+        not CSV_FULL.is_file()
+        or PARQUET_FULL.stat().st_mtime >= CSV_FULL.stat().st_mtime
+    ):
+        try:
+            return _load_from_parquet(PARQUET_FULL)
+        except Exception:
+            pass
+
+    if not CSV_FULL.is_file():
+        raise FileNotFoundError(
+            f"No se encontró dataset local ({CSV_FULL}). {data_setup_hint()}"
+        )
+
+    df = _load_from_csv(CSV_FULL)
     try:
-        epicentros = load_epicentros()
-        return merge_datasets(marketplace, epicentros)
-    except FileNotFoundError:
-        marketplace = marketplace.copy()
-        marketplace["epicentro"] = "Sin Epicentro"
-        marketplace["tipo"] = "Sin Tipo"
-        marketplace["en_listado"] = 0
-        marketplace["es_epicentro"] = 0
-        marketplace["es_gemelo"] = 0
-        marketplace["es_poc"] = 0
-        marketplace["en_epicentro"] = 0
-        return marketplace
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(PARQUET_FULL, index=False)
+    except Exception:
+        pass
+    return df

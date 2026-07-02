@@ -6,4 +6,4 @@ Get-ChildItem -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyCon
 python scripts/verify_app.py
 if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-streamlit run mapa_epicentros.py --server.headless true
+streamlit run streamlit_app.py --server.headless true

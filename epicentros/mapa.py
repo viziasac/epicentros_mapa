@@ -2,16 +2,135 @@ from __future__ import annotations
 
 import folium
 import pandas as pd
+from branca.element import MacroElement
 from folium.plugins import MarkerCluster
+from jinja2 import Template
 
-from epicentros.config import COLOR_POC, GRID_SIZE_M, PARTNERS
+from epicentros.config import COLOR_GRILLA, COLOR_POC, ETIQUETA_GRILLA, GRID_SIZE_M, PARTNERS
+
+_COLOR_ORDER = ("verde", "azul", "celeste", "naranja", "rojo")
 
 
-def _grids_geojson(
+class MapLegend(MacroElement):
+    """Leyenda HTML anclada al mapa (no al viewport del navegador)."""
+
+    def __init__(
+        self,
+        items: list[dict],
+        *,
+        show_pocs: bool = True,
+        grid_size_m: int = GRID_SIZE_M,
+    ):
+        super().__init__()
+        self._name = "MapLegend"
+
+        rows = []
+        for item in items:
+            rows.append(
+                f'<div style="display:flex;align-items:flex-start;gap:10px;margin:8px 0">'
+                f'<span style="flex-shrink:0;width:22px;height:22px;border-radius:4px;'
+                f'background:{item["color"]};border:2px solid #1f2937;'
+                f'margin-top:1px"></span>'
+                f'<div style="line-height:1.35">'
+                f'<div style="font-weight:700;font-size:14px;color:#111827">{item["title"]}</div>'
+                f'<div style="font-size:12px;color:#4b5563">{item["desc"]}</div>'
+                f'<div style="font-size:12px;font-weight:600;color:#374151;margin-top:2px">'
+                f'{item["count"]:,} grillas · {item["pct"]:.1f}%</div>'
+                f"</div></div>"
+            )
+
+        poc_block = ""
+        if show_pocs:
+            poc_block = (
+                '<div style="border-top:1px solid #e5e7eb;margin-top:10px;padding-top:10px">'
+                '<div style="font-weight:700;font-size:13px;margin-bottom:6px">POCs epicentro</div>'
+                f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px">'
+                f'<span style="width:14px;height:14px;border-radius:50%;background:{COLOR_POC};'
+                f'border:2px solid #fff;box-shadow:0 0 0 1px #333"></span>Comprador</div>'
+                '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px">'
+                '<span style="width:14px;height:14px;border-radius:50%;background:#06b6d4;'
+                'border:2px solid #fff;box-shadow:0 0 0 1px #333"></span>POP alto</div>'
+                '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px">'
+                '<span style="width:14px;height:14px;border-radius:50%;background:#9ca3af;'
+                'border:2px solid #fff;box-shadow:0 0 0 1px #333"></span>Otros</div>'
+                '<div style="font-size:11px;color:#6b7280;margin-top:4px">Tamaño ∝ POP</div>'
+                "</div>"
+            )
+
+        rows_html = "".join(rows)
+        self._template = Template(
+            f"""
+            {{% macro html(this, kwargs) %}}
+            <div id="epicentros-legend" style="
+              position:absolute;bottom:14px;left:14px;z-index:9999;
+              background:rgba(255,255,255,0.97);padding:14px 16px;
+              border-radius:10px;border:2px solid #d1d5db;
+              box-shadow:0 4px 16px rgba(0,0,0,0.18);
+              font-family:system-ui,-apple-system,Segoe UI,sans-serif;
+              min-width:300px;max-width:340px;max-height:88%;
+              overflow-y:auto;pointer-events:auto;">
+              <div style="font-size:16px;font-weight:800;color:#111827;margin-bottom:4px">
+                Leyenda de colores
+              </div>
+              <div style="font-size:11px;color:#6b7280;margin-bottom:6px">
+                Grilla {grid_size_m}×{grid_size_m} m · opacidad = intensidad
+              </div>
+              {rows_html}
+              {poc_block}
+            </div>
+            {{% endmacro %}}
+            """
+        )
+
+
+def _legend_items(
+    grid_stats: pd.DataFrame,
+    umbral_pct: float,
+    umbral_pct_pop: float,
+    umbral_pop: float,
+) -> list[dict]:
+    counts = grid_stats.groupby("etiqueta_zona").size().to_dict() if not grid_stats.empty else {}
+    total = len(grid_stats) or 1
+
+    descriptions = {
+        "verde": f"Sin epicentro · ≥{umbral_pct:.0%} clientes compradores",
+        "azul": f"Con epicentro · ≥{umbral_pct:.0%} clientes compradores",
+        "celeste": (
+            f"Con epicentro · ≥{umbral_pct_pop:.0%} clientes con POP ≥{umbral_pop:.2f}"
+        ),
+        "naranja": (
+            f"Sin epicentro · ≥{umbral_pct_pop:.0%} clientes con POP ≥{umbral_pop:.2f}"
+        ),
+        "rojo": "No cumple ninguna condición anterior",
+    }
+    titles = {
+        "verde": "Verde",
+        "azul": "Azul",
+        "celeste": "Celeste",
+        "naranja": "Naranja",
+        "rojo": "Rojo",
+    }
+
+    items = []
+    for key in _COLOR_ORDER:
+        label = ETIQUETA_GRILLA[key]
+        count = int(counts.get(label, 0))
+        items.append(
+            {
+                "color": COLOR_GRILLA[key],
+                "title": titles[key],
+                "desc": descriptions[key],
+                "count": count,
+                "pct": count / total * 100,
+            }
+        )
+    return items
+
+
+def _grid_polygons_geojson(
     grid_stats: pd.DataFrame,
     paso_lat: float,
     paso_lon: float,
-    min_partners_estables: int,
 ) -> dict:
     medio_lat = paso_lat / 2
     medio_lon = paso_lon / 2
@@ -34,16 +153,14 @@ def _grids_geojson(
                     "color": row.color_grilla,
                     "etiqueta": row.etiqueta_zona,
                     "clientes": int(row.total_clientes),
-                    "pct": round(float(row.pct_cumplen) * 100, 1),
-                    "cumplen": int(row.clientes_cumplen),
-                    "nr_mp": int(row.nr_marketplace),
-                    "nr_backus": int(row.nr_backus),
-                    "pocs": int(row.pocs_listado),
-                    "min_est": min_partners_estables,
+                    "pct_comp": round(float(row.pct_compradores) * 100, 1),
+                    "pct_pop": round(float(row.pct_pop_alto) * 100, 1),
+                    "n_epic": int(row.n_epicentros),
+                    "pop_prom": round(float(row.pop_promedio_grilla), 3),
+                    "intensidad": float(row.intensidad),
                 },
             }
         )
-
     return {"type": "FeatureCollection", "features": features}
 
 
@@ -53,6 +170,7 @@ def _map_center(df: pd.DataFrame) -> tuple[float, float, int]:
     span = max(
         float(df["latitud"].max() - df["latitud"].min()),
         float(df["longitud"].max() - df["longitud"].min()),
+        0.01,
     )
     if span > 8:
         zoom = 6
@@ -71,10 +189,11 @@ def build_map(
     paso_lat: float,
     paso_lon: float,
     selected_partners: list[str],
-    min_partners_estables: int,
+    min_partners_compradores: int,
+    umbral_pct: float,
+    umbral_pct_pop: float,
+    umbral_pop: float,
     show_pocs: bool = True,
-    min_nr_mp_poc: float = 0.0,
-    min_nr_backus_poc: float = 0.0,
 ) -> folium.Map:
     centro_lat, centro_lon, zoom = _map_center(df)
 
@@ -86,90 +205,84 @@ def build_map(
     )
 
     if not grid_stats.empty:
-        geojson = _grids_geojson(grid_stats, paso_lat, paso_lon, min_partners_estables)
+        geojson = _grid_polygons_geojson(grid_stats, paso_lat, paso_lon)
 
         def style_fn(feature: dict) -> dict:
-            color = feature["properties"]["color"]
+            props = feature["properties"]
+            color = props["color"]
+            intensity = float(props.get("intensidad", 0.5))
+            opacity = 0.28 + 0.52 * intensity
             return {
                 "fillColor": color,
                 "color": "#374151",
                 "weight": 1,
-                "fillOpacity": 0.42,
+                "fillOpacity": opacity,
             }
 
         folium.GeoJson(
             geojson,
-            name=f"Grillas {GRID_SIZE_M}×{GRID_SIZE_M} m",
+            name=f"Grillas {GRID_SIZE_M}m",
             style_function=style_fn,
             tooltip=folium.GeoJsonTooltip(
-                fields=["etiqueta", "clientes", "pct", "cumplen", "pocs", "nr_mp"],
-                aliases=["Zona", "Clientes", "% estables", "Cumplen", "POCs listado", "NR MP"],
+                fields=["etiqueta", "clientes", "pct_comp", "pct_pop", "n_epic", "pop_prom"],
+                aliases=["Zona", "Clientes", "% compradores", "% POP alto", "Epicentros", "POP prom."],
                 localize=True,
             ),
         ).add_to(m)
 
-    if show_pocs:
-        pocs = df[df["es_poc"] == 1].copy()
-        if min_nr_mp_poc > 0:
-            pocs = pocs[pocs["total_soles_marketplace_l3m"] >= min_nr_mp_poc]
-        if min_nr_backus_poc > 0:
-            pocs = pocs[pocs["total_soles_backus_l3m"] >= min_nr_backus_poc]
+    legend_items = _legend_items(grid_stats, umbral_pct, umbral_pct_pop, umbral_pop)
+    m.get_root().add_child(MapLegend(legend_items, show_pocs=show_pocs))
 
+    if show_pocs:
+        pocs = df[df["es_epicentro"] == 1]
         if not pocs.empty:
-            _add_poc_layer(m, pocs, selected_partners, min_partners_estables)
+            fg = folium.FeatureGroup(name="POCs Epicentro", show=True)
+            cluster = MarkerCluster(
+                disableClusteringAtZoom=14,
+                maxClusterRadius=40,
+                spiderfyOnMaxZoom=True,
+            ).add_to(fg)
+
+            for row in pocs.itertuples(index=False):
+                pop = float(row.pop_promedio)
+                radius = 7 + min(pop, 1.0) * 5
+                comprador = bool(row.cumple_comprador)
+                fill = "#06b6d4" if row.cumple_pop_alto else (
+                    COLOR_POC if comprador else "#9ca3af"
+                )
+                html = (
+                    f"<div style='font-size:13px'>"
+                    f"<b>Epicentro</b> · {row.cliente_id}<br>"
+                    f"<b>Canal:</b> {row.canal}<br>"
+                    f"<b>Comprador:</b> {'Sí' if comprador else 'No'} "
+                    f"({int(row.partners_compradores)}/{int(row.n_partners_sel)})<br>"
+                    f"{_partner_lines(row, selected_partners)}"
+                    f"<b>POP prom.:</b> {pop:.3f}<br>"
+                    f"<b>NR Backus:</b> S/ {row.total_soles_backus_l3m:,.0f}<br>"
+                    f"<b>NR MP:</b> S/ {row.total_soles_marketplace_l3m:,.0f}"
+                    f"</div>"
+                )
+                folium.CircleMarker(
+                    location=[float(row.latitud), float(row.longitud)],
+                    radius=radius,
+                    color="#ffffff",
+                    fill=True,
+                    fill_color=fill,
+                    fill_opacity=1.0,
+                    weight=2.5,
+                    tooltip=folium.Tooltip(html, sticky=True),
+                ).add_to(cluster)
+            fg.add_to(m)
 
     folium.LayerControl(collapsed=False).add_to(m)
     return m
-
-
-def _add_poc_layer(
-    m: folium.Map,
-    pocs: pd.DataFrame,
-    selected_partners: list[str],
-    min_partners_estables: int,
-) -> None:
-    fg = folium.FeatureGroup(name="POCs listado", show=True)
-    cluster = MarkerCluster(
-        disableClusteringAtZoom=14,
-        maxClusterRadius=40,
-        spiderfyOnMaxZoom=True,
-    ).add_to(fg)
-
-    for row in pocs.itertuples(index=False):
-        is_epic = bool(row.es_epicentro)
-        fill = COLOR_POC["epicentro"] if is_epic else COLOR_POC["gemelo"]
-        rol = "Epicentro" if is_epic else "Gemelo"
-        html = (
-            f"<div style='font-size:13px;min-width:180px'>"
-            f"<b>{rol}</b> · {row.cliente_id}<br>"
-            f"<b>Zona:</b> {row.epicentro}<br>"
-            f"<b>Canal:</b> {row.canal}<br>"
-            f"<b>Estables:</b> {int(row.partners_estables)}/"
-            f"{int(row.n_partners_sel)} (mín. {min_partners_estables})<br>"
-            f"{_partner_lines(row, selected_partners)}"
-            f"<b>NR Backus:</b> S/ {row.total_soles_backus_l3m:,.0f}<br>"
-            f"<b>NR MP:</b> S/ {row.total_soles_marketplace_l3m:,.0f}"
-            f"</div>"
-        )
-        folium.CircleMarker(
-            location=[float(row.latitud), float(row.longitud)],
-            radius=9 if is_epic else 7,
-            color="#ffffff",
-            fill=True,
-            fill_color=fill,
-            fill_opacity=1.0,
-            weight=2.5,
-            tooltip=folium.Tooltip(html, sticky=True),
-        ).add_to(cluster)
-
-    fg.add_to(m)
 
 
 def _partner_lines(row, selected_partners: list[str]) -> str:
     lines = []
     for name in selected_partners:
         p = PARTNERS[name]
-        seg = getattr(row, f"{p}_segmento_resumen", "No Comprador")
-        nr = getattr(row, f"{p}_nr_l3m", 0)
-        lines.append(f"<b>{name}:</b> {seg} (S/ {nr:,.0f})<br>")
+        flag = getattr(row, f"{p}_flag_comprador_l3m", "No Comprador L3M")
+        pop = getattr(row, f"{p}_pop", 0)
+        lines.append(f"<b>{name}:</b> {flag} · POP {pop:.3f}<br>")
     return "".join(lines)
