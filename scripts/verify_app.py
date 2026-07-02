@@ -117,7 +117,7 @@ def main() -> None:
             df = load_full_dataset()
             assert len(df) > 0
             _, _, grid, _, _ = run_pipeline(
-                df.head(8_000), ["Red Bull", "BAT"], 1, 0.10, 0.50, 0.30, 600, ()
+                df.head(8_000), ["Red Bull", "BAT"], 1, 0.10, 0.50, 0.30, 0, ()
             )
             assert not grid.empty
         finally:
@@ -131,7 +131,7 @@ def main() -> None:
 
         df = load_full_dataset().head(8_000)
         scored, _, grid, pl, po = run_pipeline(
-            df, list(["Red Bull"]), 1, 0.10, 0.50, 0.30, 400, ()
+            df, list(["Red Bull"]), 1, 0.10, 0.50, 0.30, 0, ()
         )
         build_map(scored, grid, pl, po, ["Red Bull"], 1, 0.1, 0.3, 0.5, False)
 

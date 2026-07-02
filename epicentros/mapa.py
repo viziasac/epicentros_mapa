@@ -7,7 +7,7 @@ from folium.plugins import MarkerCluster
 from jinja2 import Template
 
 from epicentros.config import COLOR_GRILLA, COLOR_POC, ETIQUETA_GRILLA, GRID_SIZE_M, PARTNERS
-from epicentros.grid import cell_ring
+from epicentros.geojson import grids_to_geojson
 
 _COLOR_ORDER = ("verde", "azul", "celeste", "naranja", "rojo")
 
@@ -128,41 +128,6 @@ def _legend_items(
     return items
 
 
-def _grid_polygons_geojson(
-    grid_stats: pd.DataFrame,
-    paso_lat: float,
-    paso_lon: float,
-) -> dict:
-    features = []
-    has_idx = "grid_i" in grid_stats.columns and "grid_j" in grid_stats.columns
-
-    for row in grid_stats.itertuples(index=False):
-        if has_idx:
-            ring = cell_ring(int(row.grid_i), int(row.grid_j), paso_lat, paso_lon)
-        else:
-            gi = int(round(float(row.grid_lat) / paso_lat))
-            gj = int(round(float(row.grid_lon) / paso_lon))
-            ring = cell_ring(gi, gj, paso_lat, paso_lon)
-
-        features.append(
-            {
-                "type": "Feature",
-                "geometry": {"type": "Polygon", "coordinates": [ring]},
-                "properties": {
-                    "color": row.color_grilla,
-                    "etiqueta": row.etiqueta_zona,
-                    "clientes": int(row.total_clientes),
-                    "pct_comp": round(float(row.pct_compradores) * 100, 1),
-                    "pct_pop": round(float(row.pct_pop_alto) * 100, 1),
-                    "n_epic": int(row.n_epicentros),
-                    "pop_prom": round(float(row.pop_promedio_grilla), 3),
-                    "intensidad": float(row.intensidad),
-                },
-            }
-        )
-    return {"type": "FeatureCollection", "features": features}
-
-
 def _map_center(df: pd.DataFrame) -> tuple[float, float, int]:
     lat = float(df["latitud"].mean())
     lon = float(df["longitud"].mean())
@@ -204,7 +169,7 @@ def build_map(
     )
 
     if not grid_stats.empty:
-        geojson = _grid_polygons_geojson(grid_stats, paso_lat, paso_lon)
+        geojson = grids_to_geojson(grid_stats)
 
         def style_fn(feature: dict) -> dict:
             props = feature["properties"]

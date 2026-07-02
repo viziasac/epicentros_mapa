@@ -7,6 +7,11 @@ CACHE_DIR = ROOT_DIR / ".cache"
 GRID_SIZE_M = 400
 PARQUET_NAME = f"base_epicentros_full_grid{GRID_SIZE_M}m.parquet"
 
+# Paso de grilla fijado al cargar datos (evita huecos al filtrar)
+GRID_REF_LAT = -12.0
+GRID_PASO_LAT: float | None = None
+GRID_PASO_LON: float | None = None
+
 # Parquet incluido en repo (deploy Streamlit Cloud sin secrets)
 PARQUET_BUNDLED = DATA_DIR / PARQUET_NAME
 
@@ -36,7 +41,7 @@ DEFAULT_MIN_PARTNERS_COMPRADORES = 1
 DEFAULT_UMBRAL_POP = 0.50
 DEFAULT_UMBRAL_PCT_POP = 0.30
 MIN_CLIENTES_GRILLA = 2
-DEFAULT_MAX_GRILLAS = 8_000
+DEFAULT_MAX_GRILLAS = 0  # 0 = mostrar todas las grillas con >= MIN_CLIENTES_GRILLA
 
 COLOR_GRILLA = {
     "verde": "#16a34a",
@@ -55,7 +60,7 @@ ETIQUETA_GRILLA = {
 }
 
 COLOR_POC = "#2563eb"
-MAX_GRILLAS_RENDER = 12_000
+MAX_GRILLAS_RENDER = 0
 
 
 def data_setup_hint() -> str:

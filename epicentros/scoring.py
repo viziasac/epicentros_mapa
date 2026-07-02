@@ -105,9 +105,7 @@ def aggregate_grids(
     umbral_pct: float,
     umbral_pct_pop: float,
 ) -> pd.DataFrame:
-    grid = df.groupby("grid_id", as_index=False).agg(
-        grid_i=("grid_i", "first"),
-        grid_j=("grid_j", "first"),
+    grid = df.groupby(["grid_i", "grid_j"], as_index=False).agg(
         grid_lat=("grid_lat", "first"),
         grid_lon=("grid_lon", "first"),
         total_clientes=("cliente_id", "count"),
@@ -116,6 +114,8 @@ def aggregate_grids(
         n_epicentros=("es_epicentro", "sum"),
         pop_promedio_grilla=("pop_promedio", "mean"),
     )
+
+    grid["grid_id"] = grid["grid_i"].astype(str) + "_" + grid["grid_j"].astype(str)
 
     grid = grid[grid["total_clientes"] >= MIN_CLIENTES_GRILLA].copy()
     grid["pct_compradores"] = grid["clientes_compradores"] / grid["total_clientes"]
@@ -144,7 +144,8 @@ def filter_grids_by_color(grid: pd.DataFrame, colores_sel: list[str] | None) -> 
 def limit_grids_for_render(
     grid: pd.DataFrame, max_grillas: int = MAX_GRILLAS_RENDER
 ) -> pd.DataFrame:
-    if len(grid) <= max_grillas:
+    """max_grillas <= 0 → sin límite (todas las grillas elegibles)."""
+    if max_grillas <= 0 or len(grid) <= max_grillas:
         return grid
 
     out = grid.copy()

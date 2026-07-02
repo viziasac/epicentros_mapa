@@ -16,7 +16,6 @@ from streamlit_folium import st_folium
 from epicentros.config import (
     COLOR_GRILLA,
     COMPRADOR_L3M,
-    DEFAULT_MAX_GRILLAS,
     DEFAULT_MIN_PARTNERS_COMPRADORES,
     DEFAULT_UMBRAL_PCT_COMPRADORES,
     DEFAULT_UMBRAL_PCT_POP,
@@ -35,7 +34,7 @@ from epicentros.pipeline import clamp_min_partners, run_pipeline
 
 ETIQUETAS_GRILLA = list(ETIQUETA_GRILLA.values())
 _COLOR_KEYS = ("verde", "azul", "celeste", "naranja", "rojo")
-_DEFAULTS_VERSION = 2
+_DEFAULTS_VERSION = 3
 
 
 def _init_session_state() -> None:
@@ -49,7 +48,6 @@ def _init_session_state() -> None:
         "gerencias_sel": [],
         "solo_epicentro": False,
         "segmento_sel": "Todos",
-        "max_grillas": DEFAULT_MAX_GRILLAS,
         "show_pocs": True,
     }
     if st.session_state.get("_defaults_version") != _DEFAULTS_VERSION:
@@ -95,9 +93,9 @@ def render_kpis(df, grid_stats, grid_full) -> None:
         help="Clientes que cumplen el mínimo de partners compradores",
     )
     r1[3].metric(
-        "Grillas en mapa",
+        "Grillas (≥2 clientes)",
         f"{n_grillas:,}",
-        f"{n_grillas / n_total:.0%} del total" if n_total else None,
+        "todas visibles" if n_grillas == n_total else f"{n_grillas}/{n_total}",
     )
 
     r2 = st.columns(5)
@@ -125,7 +123,6 @@ def cached_pipeline(
     solo_epicentro: bool,
     segmento: str,
     colores_key: tuple[str, ...],
-    max_grillas: int,
 ):
     prefix = PARTNERS[partners_key[0]] if partners_key else None
     df = apply_geo_filters(
@@ -145,7 +142,7 @@ def cached_pipeline(
         umbral_pct,
         umbral_pop,
         umbral_pct_pop,
-        max_grillas,
+        0,
         colores_key,
     )
 
@@ -247,10 +244,13 @@ st.sidebar.selectbox(
     key="segmento_sel",
 )
 
-st.sidebar.slider("Máx. grillas", 500, 12_000, step=500, key="max_grillas")
 st.sidebar.checkbox("Mostrar POCs epicentro", key="show_pocs")
 
-# Valores activos desde session_state (siempre los últimos del widget)
+st.sidebar.caption(
+    f"Mín. **{MIN_CLIENTES_GRILLA} clientes** por grilla · se muestran **todas** las elegibles."
+)
+
+# Valores activos desde session_state
 min_partners_compradores = int(st.session_state["min_partners_compradores"])
 umbral_pct = float(st.session_state["umbral_pct"])
 umbral_pop = float(st.session_state["umbral_pop"])
@@ -260,7 +260,6 @@ canal_sel = st.session_state["canal_sel"]
 gerencias_key = tuple(st.session_state["gerencias_sel"])
 solo_epicentro = bool(st.session_state["solo_epicentro"])
 segmento_sel = st.session_state["segmento_sel"]
-max_grillas = int(st.session_state["max_grillas"])
 show_pocs = bool(st.session_state["show_pocs"])
 
 result = cached_pipeline(
@@ -274,7 +273,6 @@ result = cached_pipeline(
     solo_epicentro,
     segmento_sel,
     tuple(colores_sel),
-    max_grillas,
 )
 
 if result is None:
@@ -313,7 +311,6 @@ map_key = _map_render_key(
     solo_epicentro=solo_epicentro,
     segmento=segmento_sel,
     colores=tuple(colores_sel),
-    max_grillas=max_grillas,
     show_pocs=show_pocs,
     n_grillas=len(grid_stats),
     color_sig=tuple(grid_stats["color_grilla"].value_counts().items()),
