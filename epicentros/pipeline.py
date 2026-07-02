@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from epicentros.grid import grid_step
+from epicentros.grid import ensure_grid_indices, get_grid_step
 from epicentros.scoring import (
     aggregate_grids,
     compute_client_metrics,
@@ -37,8 +37,9 @@ def run_pipeline(
     scored = compute_client_metrics(
         df, prefixes, min_partners_compradores, umbral_pop
     )
+    scored = ensure_grid_indices(scored)
 
-    paso_lat, paso_lon = grid_step(float(scored["latitud"].mean()))
+    paso_lat, paso_lon = get_grid_step()
 
     grid_full = aggregate_grids(scored, umbral_pct, umbral_pct_pop)
     grid_full = filter_grids_by_color(grid_full, list(colores_grilla) or None)

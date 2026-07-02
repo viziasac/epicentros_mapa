@@ -36,6 +36,7 @@ def main() -> None:
             "mapa_epicentros.py",
             "requirements.txt",
             "data/base_epicentros_full_grid400m.parquet",
+            "data/grid_meta.json",
             "epicentros/config.py",
             "epicentros/data.py",
             "epicentros/filters.py",

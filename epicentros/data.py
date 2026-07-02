@@ -19,7 +19,7 @@ from epicentros.config import (
     PARTNERS,
     data_setup_hint,
 )
-from epicentros.grid import assign_grid_columns
+from epicentros.grid import assign_grid_columns, ensure_grid_indices, set_grid_step_from_dataframe
 
 
 def _coerce_numeric(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
@@ -93,6 +93,9 @@ def _load_from_parquet(path: Path) -> pd.DataFrame:
     df = pd.read_parquet(path)
     if "grid_id" not in df.columns:
         df = _prepare_dataframe(df)
+    else:
+        set_grid_step_from_dataframe(df)
+        df = ensure_grid_indices(df)
     return df
 
 

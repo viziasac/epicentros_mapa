@@ -7,6 +7,7 @@ from folium.plugins import MarkerCluster
 from jinja2 import Template
 
 from epicentros.config import COLOR_GRILLA, COLOR_POC, ETIQUETA_GRILLA, GRID_SIZE_M, PARTNERS
+from epicentros.grid import cell_ring
 
 _COLOR_ORDER = ("verde", "azul", "celeste", "naranja", "rojo")
 
@@ -132,19 +133,17 @@ def _grid_polygons_geojson(
     paso_lat: float,
     paso_lon: float,
 ) -> dict:
-    medio_lat = paso_lat / 2
-    medio_lon = paso_lon / 2
     features = []
+    has_idx = "grid_i" in grid_stats.columns and "grid_j" in grid_stats.columns
 
     for row in grid_stats.itertuples(index=False):
-        lat, lon = float(row.grid_lat), float(row.grid_lon)
-        ring = [
-            [lon - medio_lon, lat - medio_lat],
-            [lon + medio_lon, lat - medio_lat],
-            [lon + medio_lon, lat + medio_lat],
-            [lon - medio_lon, lat + medio_lat],
-            [lon - medio_lon, lat - medio_lat],
-        ]
+        if has_idx:
+            ring = cell_ring(int(row.grid_i), int(row.grid_j), paso_lat, paso_lon)
+        else:
+            gi = int(round(float(row.grid_lat) / paso_lat))
+            gj = int(round(float(row.grid_lon) / paso_lon))
+            ring = cell_ring(gi, gj, paso_lat, paso_lon)
+
         features.append(
             {
                 "type": "Feature",
@@ -214,8 +213,9 @@ def build_map(
             opacity = 0.28 + 0.52 * intensity
             return {
                 "fillColor": color,
-                "color": "#374151",
-                "weight": 1,
+                "color": color,
+                "weight": 0,
+                "stroke": False,
                 "fillOpacity": opacity,
             }
 

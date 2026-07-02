@@ -106,6 +106,8 @@ def aggregate_grids(
     umbral_pct_pop: float,
 ) -> pd.DataFrame:
     grid = df.groupby("grid_id", as_index=False).agg(
+        grid_i=("grid_i", "first"),
+        grid_j=("grid_j", "first"),
         grid_lat=("grid_lat", "first"),
         grid_lon=("grid_lon", "first"),
         total_clientes=("cliente_id", "count"),
