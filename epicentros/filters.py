@@ -11,15 +11,19 @@ def apply_geo_filters(
     segmento_comprador: str = "Todos",
     partner_prefix: str | None = None,
 ) -> pd.DataFrame:
-    out = df
+    mask = pd.Series(True, index=df.index)
+
     if canal != "Todos":
-        out = out[out["canal"] == canal]
+        mask &= df["canal"] == canal
     if gerencias:
-        out = out[out["gerencia"].isin(gerencias)]
+        mask &= df["gerencia"].isin(gerencias)
     if solo_epicentro:
-        out = out[out["es_epicentro"] == 1]
+        mask &= df["es_epicentro"] == 1
     if segmento_comprador != "Todos" and partner_prefix:
         col = f"{partner_prefix}_flag_comprador_l3m"
-        if col in out.columns:
-            out = out[out[col].astype(str).str.strip() == segmento_comprador]
-    return out
+        if col in df.columns:
+            mask &= df[col].astype(str).str.strip() == segmento_comprador
+
+    if mask.all():
+        return df
+    return df.loc[mask]

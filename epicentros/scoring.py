@@ -16,7 +16,9 @@ from epicentros.config import (
 
 
 def partner_prefixes(selected_partners: list[str]) -> list[str]:
-    return [PARTNERS[p] for p in selected_partners if p in PARTNERS]
+    """Prefijos en orden canónico de PARTNERS (estable y sin duplicados)."""
+    selected = set(selected_partners)
+    return [pref for name, pref in PARTNERS.items() if name in selected]
 
 
 def compute_client_metrics(
@@ -28,30 +30,35 @@ def compute_client_metrics(
     if not prefixes:
         raise ValueError("Selecciona al menos un partner.")
 
-    comprador_flags = []
-    pop_cols = []
+    n = len(df)
+    k = len(prefixes)
+    comprador_mat = np.empty((n, k), dtype=np.int8)
+    pop_mat = np.empty((n, k), dtype=np.float64)
 
-    for p in prefixes:
+    for i, p in enumerate(prefixes):
         flag_col = f"{p}_flag_comprador_l3m"
         pop_col = f"{p}_pop"
         if flag_col not in df.columns:
             raise KeyError(f"Columna requerida no encontrada: {flag_col}")
-        flags = df[flag_col].fillna("").astype(str).str.strip()
-        comprador_flags.append((flags == COMPRADOR_L3M).astype(np.int8))
-        pop_cols.append(df[pop_col].to_numpy(dtype=float))
+        if pop_col not in df.columns:
+            raise KeyError(f"Columna requerida no encontrada: {pop_col}")
 
-    comprador_mat = np.column_stack(comprador_flags)
-    pop_mat = np.column_stack(pop_cols)
+        flags = df[flag_col].to_numpy()
+        comprador_mat[:, i] = np.asarray(flags == COMPRADOR_L3M, dtype=np.int8)
+        pop_mat[:, i] = pd.to_numeric(df[pop_col], errors="coerce").fillna(0).to_numpy(
+            dtype=np.float64
+        )
 
-    out = df.copy()
-    n = len(prefixes)
-    out["n_partners_sel"] = n
-    out["partners_compradores"] = comprador_mat.sum(axis=1)
-    out["pop_promedio"] = pop_mat.mean(axis=1)
-    out["cumple_comprador"] = (
-        out["partners_compradores"] >= min_partners_compradores
-    ).astype(np.int8)
-    out["cumple_pop_alto"] = (out["pop_promedio"] >= umbral_pop).astype(np.int8)
+    min_req = max(1, min(int(min_partners_compradores), k))
+    partners_compradores = comprador_mat.sum(axis=1)
+    pop_promedio = pop_mat.mean(axis=1)
+
+    out = df.copy(deep=False)
+    out["n_partners_sel"] = k
+    out["partners_compradores"] = partners_compradores
+    out["pop_promedio"] = pop_promedio
+    out["cumple_comprador"] = (partners_compradores >= min_req).astype(np.int8)
+    out["cumple_pop_alto"] = (pop_promedio >= float(umbral_pop)).astype(np.int8)
     return out
 
 
@@ -61,11 +68,11 @@ def _color_grid(
     n_epicentros: pd.Series,
     umbral_pct: float,
     umbral_pct_pop: float,
-) -> tuple[pd.Series, pd.Series, pd.Series]:
-    tiene_epic = n_epicentros >= 1
-    sin_epic = n_epicentros == 0
-    fuerte_comp = pct_compradores >= umbral_pct
-    fuerte_pop = pct_pop_alto >= umbral_pct_pop
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    tiene_epic = n_epicentros.to_numpy() >= 1
+    sin_epic = ~tiene_epic
+    fuerte_comp = pct_compradores.to_numpy() >= umbral_pct
+    fuerte_pop = pct_pop_alto.to_numpy() >= umbral_pct_pop
 
     # Prioridad: celeste > azul > verde > naranja > rojo
     es_celeste = tiene_epic & fuerte_pop
@@ -98,8 +105,7 @@ def _color_grid(
     intensidad = np.clip(
         np.maximum(pct_compradores.to_numpy(), pct_pop_alto.to_numpy()), 0, 1
     )
-
-    return pd.Series(color), pd.Series(etiqueta), pd.Series(intensidad)
+    return color, etiqueta, intensidad
 
 
 def aggregate_grids(
@@ -107,7 +113,7 @@ def aggregate_grids(
     umbral_pct: float,
     umbral_pct_pop: float,
 ) -> pd.DataFrame:
-    grid = df.groupby(["grid_i", "grid_j"], as_index=False).agg(
+    grid = df.groupby(["grid_i", "grid_j"], as_index=False, sort=False).agg(
         grid_lat=("grid_lat", "first"),
         grid_lon=("grid_lon", "first"),
         total_clientes=("cliente_id", "count"),
@@ -117,11 +123,16 @@ def aggregate_grids(
         pop_promedio_grilla=("pop_promedio", "mean"),
     )
 
-    grid["grid_id"] = grid["grid_i"].astype(str) + "_" + grid["grid_j"].astype(str)
+    grid = grid.loc[grid["total_clientes"] >= MIN_CLIENTES_GRILLA].copy()
+    if grid.empty:
+        return grid
 
-    grid = grid[grid["total_clientes"] >= MIN_CLIENTES_GRILLA].copy()
-    grid["pct_compradores"] = grid["clientes_compradores"] / grid["total_clientes"]
-    grid["pct_pop_alto"] = grid["clientes_pop_alto"] / grid["total_clientes"]
+    grid["grid_id"] = (
+        grid["grid_i"].astype(str) + "_" + grid["grid_j"].astype(str)
+    )
+    total = grid["total_clientes"].to_numpy(dtype=float)
+    grid["pct_compradores"] = grid["clientes_compradores"].to_numpy(dtype=float) / total
+    grid["pct_pop_alto"] = grid["clientes_pop_alto"].to_numpy(dtype=float) / total
 
     color, etiqueta, intensidad = _color_grid(
         grid["pct_compradores"],
@@ -130,10 +141,9 @@ def aggregate_grids(
         umbral_pct,
         umbral_pct_pop,
     )
-    grid["color_grilla"] = color.to_numpy()
-    grid["etiqueta_zona"] = etiqueta.to_numpy()
-    grid["intensidad"] = intensidad.to_numpy()
-
+    grid["color_grilla"] = color
+    grid["etiqueta_zona"] = etiqueta
+    grid["intensidad"] = intensidad
     return grid
 
 
@@ -175,7 +185,7 @@ def filter_grids_by_color(grid: pd.DataFrame, colores_sel: list[str] | None) -> 
     canon = canonical_etiquetas(colores_sel)
     if not canon:
         return grid
-    return grid[grid["etiqueta_zona"].isin(canon)].copy()
+    return grid.loc[grid["etiqueta_zona"].isin(canon)].copy()
 
 
 def limit_grids_for_render(

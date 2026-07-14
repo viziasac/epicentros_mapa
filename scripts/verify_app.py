@@ -69,10 +69,10 @@ def main() -> None:
         n_e = pd.Series([0, 1, 1, 0, 0, 1, 0, 0, 1, 1])
 
         _, etiquetas, _ = _color_grid(pct_c, pct_p, n_e, 0.3, 0.3)
-        assert etiquetas.iloc[0] == ETIQUETA_GRILLA["verde"]
-        assert etiquetas.iloc[1] == ETIQUETA_GRILLA["azul"]
-        assert etiquetas.iloc[2] == ETIQUETA_GRILLA["celeste"]
-        assert etiquetas.iloc[7] == ETIQUETA_GRILLA["naranja"]
+        assert etiquetas[0] == ETIQUETA_GRILLA["verde"]
+        assert etiquetas[1] == ETIQUETA_GRILLA["azul"]
+        assert etiquetas[2] == ETIQUETA_GRILLA["celeste"]
+        assert etiquetas[7] == ETIQUETA_GRILLA["naranja"]
 
     def streamlit_entry():
         entry = ROOT / "streamlit_app.py"
@@ -155,12 +155,24 @@ def main() -> None:
         from epicentros.config import ETIQUETA_GRILLA
         from epicentros.data import load_full_dataset
         from epicentros.pipeline import run_pipeline
-        from epicentros.scoring import canonical_etiqueta, filter_grids_by_color
+        from epicentros.scoring import (
+            canonical_etiqueta,
+            compute_client_metrics,
+            filter_grids_by_color,
+            partner_prefixes,
+        )
 
         assert canonical_etiqueta("Verde - compradores") == ETIQUETA_GRILLA["verde"]
         assert canonical_etiqueta("POC Inestable Epicentro") is None
 
+        # Orden estable de partners independientemente del input
+        assert partner_prefixes(["BAT", "Red Bull"]) == ["rb", "bat"]
+
         df = load_full_dataset().head(8_000)
+        m1 = compute_client_metrics(df, ["rb", "bat"], 1, 0.50)
+        m2 = compute_client_metrics(df, ["rb", "bat"], 2, 0.50)
+        assert int(m2["cumple_comprador"].sum()) <= int(m1["cumple_comprador"].sum())
+
         _, grid_full, _, _, _ = run_pipeline(
             df, ["Red Bull"], 1, 0.10, 0.50, 0.30, 0, ()
         )

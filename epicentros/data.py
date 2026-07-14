@@ -5,11 +5,11 @@ import os
 import urllib.request
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from epicentros.config import (
     CACHE_DIR,
-    COMPRADOR_L3M,
     CSV_FOCO_REDBULL,
     CSV_FULL,
     ENV_DATA_URL,
@@ -22,12 +22,40 @@ from epicentros.config import (
 )
 from epicentros.grid import assign_grid_columns, ensure_grid_indices, set_grid_step_from_dataframe
 
+_PARTNER_PREFIXES = tuple(PARTNERS.values())
+
 
 def _coerce_numeric(df: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     for col in columns:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
     return df
+
+
+def _required_columns() -> list[str]:
+    cols = [
+        "cliente_id",
+        "latitud",
+        "longitud",
+        "flag_epicentro",
+        "canal",
+        "gerencia",
+        "total_soles_backus_l3m",
+        "total_soles_marketplace_l3m",
+    ]
+    for prefix in _PARTNER_PREFIXES:
+        cols.append(f"{prefix}_flag_comprador_l3m")
+        cols.append(f"{prefix}_pop")
+    return cols
+
+
+def _validate_schema(df: pd.DataFrame) -> None:
+    missing = [c for c in _required_columns() if c not in df.columns]
+    if missing:
+        raise KeyError(
+            "Dataset incompleto. Faltan columnas: " + ", ".join(missing[:12])
+            + ("…" if len(missing) > 12 else "")
+        )
 
 
 def _remote_data_url() -> str | None:
@@ -67,14 +95,29 @@ def _load_foco_redbull_ids() -> set[str]:
 
 def _attach_foco_redbull(df: pd.DataFrame) -> pd.DataFrame:
     """Left join lógico: marca clientes presentes en clientes_foco_redbull."""
-    out = df.copy()
+    out = df.copy(deep=False)
     out["cliente_id"] = out["cliente_id"].astype(str).str.strip()
     foco_ids = _load_foco_redbull_ids()
     out["es_foco_redbull"] = out["cliente_id"].isin(foco_ids).astype("int8")
     return out
 
 
+def _normalize_partner_flags(df: pd.DataFrame) -> pd.DataFrame:
+    from epicentros.config import COMPRADOR_L3M
+
+    for prefix in _PARTNER_PREFIXES:
+        col = f"{prefix}_flag_comprador_l3m"
+        if col not in df.columns:
+            continue
+        cleaned = df[col].fillna(NO_COMPRADOR_L3M).astype(str).str.strip()
+        upper = cleaned.str.casefold()
+        is_buyer = upper.isin({"comprador l3m", "comprador"})
+        df[col] = np.where(is_buyer, COMPRADOR_L3M, NO_COMPRADOR_L3M)
+    return df
+
+
 def _prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    _validate_schema(df)
     df = df.copy()
     df["cliente_id"] = df["cliente_id"].astype(str).str.strip()
     df = df.dropna(subset=["latitud", "longitud"])
@@ -86,21 +129,40 @@ def _prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
         "total_soles_marketplace_l3m",
         "flag_epicentro",
     ]
-    for prefix in PARTNERS.values():
+    for prefix in _PARTNER_PREFIXES:
         numeric_cols.extend(
             [f"{prefix}_cajas_l3m", f"{prefix}_nr_l3m", f"{prefix}_pop"]
         )
 
     df = _coerce_numeric(df, numeric_cols)
-
-    for prefix in PARTNERS.values():
-        col = f"{prefix}_flag_comprador_l3m"
-        if col in df.columns:
-            df[col] = df[col].fillna(NO_COMPRADOR_L3M).astype(str).str.strip()
-
-    df["es_epicentro"] = df["flag_epicentro"].astype(int)
+    df = _normalize_partner_flags(df)
+    df["es_epicentro"] = (df["flag_epicentro"].fillna(0).astype(int) > 0).astype("int8")
     df, _, _ = assign_grid_columns(df)
     return _attach_foco_redbull(df)
+
+
+def _ensure_parquet_runtime(df: pd.DataFrame) -> pd.DataFrame:
+    """Normaliza columnas críticas si el parquet viene preprocesado."""
+    _validate_schema(df)
+    out = df
+    if "es_epicentro" not in out.columns:
+        out = out.copy(deep=False)
+        out["es_epicentro"] = (
+            out["flag_epicentro"].fillna(0).astype(int) > 0
+        ).astype("int8")
+    # Flags ya deberían venir limpios del export; re-strip liviano si hace falta
+    for prefix in _PARTNER_PREFIXES:
+        col = f"{prefix}_flag_comprador_l3m"
+        sample = out[col].iloc[0] if len(out) else ""
+        if isinstance(sample, str) and sample not in (
+            "Comprador L3M",
+            "No Comprador L3M",
+        ):
+            out = _normalize_partner_flags(out.copy(deep=False))
+            break
+    set_grid_step_from_dataframe(out)
+    out = ensure_grid_indices(out)
+    return _attach_foco_redbull(out)
 
 
 def _load_from_csv(path: Path) -> pd.DataFrame:
@@ -110,15 +172,8 @@ def _load_from_csv(path: Path) -> pd.DataFrame:
 def _load_from_parquet(path: Path) -> pd.DataFrame:
     df = pd.read_parquet(path)
     if "grid_id" not in df.columns:
-        df = _prepare_dataframe(df)
-    else:
-        set_grid_step_from_dataframe(df)
-        df = ensure_grid_indices(df)
-        if "es_epicentro" not in df.columns and "flag_epicentro" in df.columns:
-            df = df.copy()
-            df["es_epicentro"] = df["flag_epicentro"].astype(int)
-        df = _attach_foco_redbull(df)
-    return df
+        return _prepare_dataframe(df)
+    return _ensure_parquet_runtime(df)
 
 
 def _load_from_path(path: Path) -> pd.DataFrame:

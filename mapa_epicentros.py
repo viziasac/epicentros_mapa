@@ -36,7 +36,7 @@ from epicentros.scoring import canonical_etiqueta
 ETIQUETAS_GRILLA = list(ETIQUETA_GRILLA.values())
 _ETIQUETAS_SET = set(ETIQUETAS_GRILLA)
 _COLOR_KEYS = ("verde", "azul", "celeste", "naranja", "rojo")
-_DEFAULTS_VERSION = 5
+_DEFAULTS_VERSION = 6
 
 
 def _sanitize_colores_sel(raw: list[str]) -> list[str]:
@@ -61,6 +61,7 @@ def _init_session_state() -> None:
         "gerencias_sel": [],
         "solo_epicentro": False,
         "segmento_sel": "Todos",
+        "segmento_partner_sel": "Red Bull",
         "show_pocs": True,
         "show_pocs_foco": True,
     }
@@ -142,9 +143,12 @@ def cached_pipeline(
     gerencias_key: tuple[str, ...],
     solo_epicentro: bool,
     segmento: str,
+    segmento_partner: str,
     colores_key: tuple[str, ...],
 ):
-    prefix = PARTNERS[partners_key[0]] if partners_key else None
+    prefix = PARTNERS.get(segmento_partner) or (
+        PARTNERS[partners_key[0]] if partners_key else None
+    )
     df = apply_geo_filters(
         get_data(),
         canal,
@@ -201,7 +205,8 @@ if not partners_sel:
     st.stop()
 
 n_partners = len(partners_sel)
-partners_key = tuple(partners_sel)
+# Orden canónico (PARTNERS) → caché estable e independiente del orden del multiselect
+partners_key = tuple(name for name in PARTNERS if name in set(partners_sel))
 
 if st.session_state.get("_partners_key") != partners_key:
     st.session_state["_partners_key"] = partners_key
@@ -209,6 +214,8 @@ if st.session_state.get("_partners_key") != partners_key:
         n_partners,
         st.session_state.get("min_partners_compradores", DEFAULT_MIN_PARTNERS_COMPRADORES),
     )
+    if st.session_state.get("segmento_partner_sel") not in partners_key:
+        st.session_state["segmento_partner_sel"] = partners_key[0]
 
 st.sidebar.subheader("Reglas de color de grilla")
 st.sidebar.caption(
@@ -291,14 +298,25 @@ st.sidebar.checkbox(
     help="Restringe el análisis a clientes con flag de epicentro = 1.",
 )
 
-partner_ref = partners_sel[0]
+if st.session_state.get("segmento_partner_sel") not in partners_key:
+    st.session_state["segmento_partner_sel"] = partners_key[0]
+
 st.sidebar.selectbox(
-    f"Segmento comprador · {partner_ref}",
+    "Partner del filtro de segmento",
+    options=list(partners_key),
+    key="segmento_partner_sel",
+    help=(
+        "Elige qué partner usa el filtro de Comprador L3M / No Comprador L3M. "
+        "No cambia el cálculo multi-partner de colores; solo el universo de clientes."
+    ),
+)
+st.sidebar.selectbox(
+    "Segmento comprador L3M",
     ["Todos", COMPRADOR_L3M, NO_COMPRADOR_L3M],
     key="segmento_sel",
     help=(
-        f"Filtra por el flag L3M de {partner_ref} (primer partner de la lista activa). "
-        "No cambia la lógica de color de grillas; solo el universo de clientes."
+        "Filtra clientes por el flag L3M del partner elegido arriba. "
+        "Independiente del mínimo de partners compradores usado en el coloreo."
     ),
 )
 
@@ -334,6 +352,7 @@ canal_sel = st.session_state["canal_sel"]
 gerencias_key = tuple(st.session_state["gerencias_sel"])
 solo_epicentro = bool(st.session_state["solo_epicentro"])
 segmento_sel = st.session_state["segmento_sel"]
+segmento_partner = st.session_state["segmento_partner_sel"]
 show_pocs = bool(st.session_state["show_pocs"])
 show_pocs_foco = bool(st.session_state["show_pocs_foco"])
 
@@ -347,6 +366,7 @@ result = cached_pipeline(
     gerencias_key,
     solo_epicentro,
     segmento_sel,
+    segmento_partner,
     tuple(colores_sel),
 )
 
@@ -376,7 +396,7 @@ folium_map = build_map(
     grid_stats,
     paso_lat,
     paso_lon,
-    partners_sel,
+    list(partners_key),
     min_partners_compradores,
     umbral_pct,
     umbral_pct_pop,
@@ -395,6 +415,7 @@ map_key = _map_render_key(
     gerencias=gerencias_key,
     solo_epicentro=solo_epicentro,
     segmento=segmento_sel,
+    segmento_partner=segmento_partner,
     colores=tuple(colores_sel),
     show_pocs=show_pocs,
     show_pocs_foco=show_pocs_foco,
