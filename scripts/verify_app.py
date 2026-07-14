@@ -196,7 +196,8 @@ def main() -> None:
         assert items, "Leyenda vacía con grillas verdes"
         assert all(item["count"] > 0 for item in items)
         titles = {item["title"] for item in items}
-        assert titles == {"Verde"}
+        assert titles == {"Verde — compradores"}
+        assert "compradores" in items[0]["desc"].lower()
 
         empty_items = _legend_items(grid.iloc[0:0], 0.10, 0.30, 0.50)
         assert empty_items == []

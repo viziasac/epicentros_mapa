@@ -171,6 +171,10 @@ st.set_page_config(page_title="Mapa Epicentros", layout="wide")
 _init_session_state()
 
 st.title("Mapa dinámico de epicentros — compradores y POP")
+st.caption(
+    "Cada celda del mapa resume la densidad de clientes filtrados. "
+    "Los colores dependen de umbrales de compradores, POP y presencia de epicentros."
+)
 
 try:
     df_base = get_data()
@@ -186,6 +190,10 @@ partners_sel = st.sidebar.multiselect(
     options=list(PARTNERS.keys()),
     default=list(PARTNERS.keys()),
     key="partners_sel",
+    help=(
+        "Define qué marcas entran en el cálculo de compradores y POP. "
+        "Solo se usan las columnas de los partners seleccionados."
+    ),
 )
 
 if not partners_sel:
@@ -202,73 +210,116 @@ if st.session_state.get("_partners_key") != partners_key:
         st.session_state.get("min_partners_compradores", DEFAULT_MIN_PARTNERS_COMPRADORES),
     )
 
-st.sidebar.subheader("Umbrales de color")
+st.sidebar.subheader("Reglas de color de grilla")
+st.sidebar.caption(
+    "Un cliente cuenta como comprador si cumple el mínimo de partners compradores L3M. "
+    "POP alto: el promedio de POP de los partners activos alcanza el umbral."
+)
 
 if n_partners == 1:
     st.session_state["min_partners_compradores"] = 1
-    st.sidebar.caption("1 partner → mín. compradores: **1**")
+    st.sidebar.caption("Con un solo partner, el mínimo de compradores queda en **1**.")
 else:
     st.sidebar.slider(
-        "Partners compradores mín. por cliente",
+        "Mín. partners compradores por cliente",
         1,
         n_partners,
         key="min_partners_compradores",
+        help=(
+            "Cantidad mínima de partners (entre los activos) en los que el cliente "
+            "debe ser Comprador L3M para contarlo como comprador."
+        ),
     )
 
 st.sidebar.slider(
-    "% compradores en grilla (verde/azul)",
+    "Umbral % compradores en la grilla",
     0.0,
     1.0,
     step=0.05,
     key="umbral_pct",
+    help=(
+        "Porcentaje mínimo de clientes compradores dentro de la celda para pintar "
+        "verde (sin epicentro) o azul (con epicentro)."
+    ),
 )
 st.sidebar.slider(
-    "POP mínimo por cliente",
+    "Umbral POP por cliente",
     0.0,
     1.0,
     step=0.01,
     key="umbral_pop",
+    help=(
+        "POP promedio mínimo del cliente (sobre partners activos) para considerarlo "
+        "de POP alto."
+    ),
 )
 st.sidebar.slider(
-    "% clientes POP alto en grilla (celeste/naranja)",
+    "Umbral % POP alto en la grilla",
     0.0,
     1.0,
     step=0.05,
     key="umbral_pct_pop",
+    help=(
+        "Porcentaje mínimo de clientes con POP alto en la celda para pintar "
+        "celeste (con epicentro, prioridad máxima) o naranja (sin epicentro)."
+    ),
 )
 
 st.sidebar.multiselect(
-    "Mostrar grillas",
+    "Colores de grilla a mostrar",
     ETIQUETAS_GRILLA,
     key="colores_sel",
+    help="Limita qué categorías de color se dibujan en el mapa. Vacío se restablece a todos.",
 )
 
-st.sidebar.subheader("Geografía")
+st.sidebar.subheader("Alcance geográfico y de cliente")
 st.sidebar.selectbox(
     "Canal",
     ["Todos"] + sorted(df_base["canal"].dropna().unique()),
     key="canal_sel",
+    help="Filtra el universo de clientes por canal comercial. 'Todos' deja el total.",
 )
 st.sidebar.multiselect(
     "Gerencias",
     sorted(df_base["gerencia"].dropna().unique()),
     key="gerencias_sel",
-    help="Vacío = todas las gerencias",
+    help="Filtra por una o más gerencias. Sin selección = todas las gerencias.",
 )
-st.sidebar.checkbox("Solo clientes epicentro", key="solo_epicentro")
+st.sidebar.checkbox(
+    "Solo clientes epicentro",
+    key="solo_epicentro",
+    help="Restringe el análisis a clientes con flag de epicentro = 1.",
+)
 
 partner_ref = partners_sel[0]
 st.sidebar.selectbox(
-    f"Comprador ({partner_ref})",
+    f"Segmento comprador · {partner_ref}",
     ["Todos", COMPRADOR_L3M, NO_COMPRADOR_L3M],
     key="segmento_sel",
+    help=(
+        f"Filtra por el flag L3M de {partner_ref} (primer partner de la lista activa). "
+        "No cambia la lógica de color de grillas; solo el universo de clientes."
+    ),
 )
 
-st.sidebar.checkbox("Mostrar POCs epicentro", key="show_pocs")
-st.sidebar.checkbox("Mostrar POCs Foco Red Bull", key="show_pocs_foco")
+st.sidebar.subheader("Capas de puntos")
+st.sidebar.checkbox(
+    "Mostrar POCs epicentro",
+    key="show_pocs",
+    help="Dibuja puntos de clientes epicentro sobre el mapa (clusterizados).",
+)
+st.sidebar.checkbox(
+    "Mostrar POCs Foco Red Bull",
+    key="show_pocs_foco",
+    help=(
+        "Dibuja en amarillo los clientes del listado de foco Red Bull "
+        "que coinciden por cliente_id."
+    ),
+)
 
 st.sidebar.caption(
-    f"Mín. **{MIN_CLIENTES_GRILLA} clientes** por grilla · se muestran **todas** las elegibles."
+    f"Cada grilla requiere al menos **{MIN_CLIENTES_GRILLA} clientes** filtrados. "
+    "Se renderizan todas las celdas elegibles."
 )
 
 # Valores activos desde session_state

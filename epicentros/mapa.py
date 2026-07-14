@@ -46,47 +46,71 @@ class MapLegend(MacroElement):
             desc = html.escape(str(item["desc"]))
             color = html.escape(str(item["color"]))
             rows.append(
-                f'<div style="display:flex;align-items:center;gap:8px;margin:3px 0;'
-                f'font-size:12px;line-height:1.25" title="{desc}">'
-                f'<span style="flex-shrink:0;width:12px;height:12px;border-radius:2px;'
-                f'background:{color};border:1px solid #111827"></span>'
-                f'<span style="font-weight:700;color:#111827;min-width:58px">{title}</span>'
-                f'<span style="color:#4b5563;flex:1;overflow:hidden;'
-                f'text-overflow:ellipsis;white-space:nowrap">{desc}</span>'
-                f'<span style="flex-shrink:0;font-weight:600;color:#374151">'
-                f'{item["count"]:,} · {item["pct"]:.0f}%</span>'
+                f'<div style="display:flex;gap:10px;margin:0 0 10px 0;align-items:flex-start">'
+                f'<span style="flex-shrink:0;width:14px;height:14px;margin-top:2px;'
+                f'border-radius:3px;background:{color};border:1px solid #111827"></span>'
+                f'<div style="flex:1;min-width:0">'
+                f'<div style="display:flex;justify-content:space-between;gap:8px;'
+                f'align-items:baseline">'
+                f'<div style="font-weight:800;font-size:13px;color:#111827">{title}</div>'
+                f'<div style="flex-shrink:0;font-size:11px;font-weight:700;color:#374151">'
+                f'{item["count"]:,} · {item["pct"]:.0f}%</div>'
                 f"</div>"
+                f'<div style="font-size:11px;line-height:1.4;color:#4b5563;margin-top:2px;'
+                f'white-space:normal">{desc}</div>'
+                f"</div></div>"
             )
 
         extras = []
         if show_pocs and n_pocs > 0:
             extras.append(
-                f'<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:12px">'
-                f'<span style="width:12px;height:12px;border-radius:50%;background:{COLOR_POC};'
-                f'border:1px solid #fff;box-shadow:0 0 0 1px #333"></span>'
-                f'<span style="font-weight:600">Epicentro</span>'
-                f'<span style="color:#6b7280">{n_pocs:,} POCs</span></div>'
+                f'<div style="display:flex;gap:10px;margin:0 0 8px 0;align-items:flex-start">'
+                f'<span style="flex-shrink:0;width:14px;height:14px;margin-top:2px;'
+                f'border-radius:50%;background:{COLOR_POC};border:1px solid #fff;'
+                f'box-shadow:0 0 0 1px #333"></span>'
+                f'<div style="flex:1">'
+                f'<div style="display:flex;justify-content:space-between;gap:8px">'
+                f'<div style="font-weight:800;font-size:12px;color:#111827">POC epicentro</div>'
+                f'<div style="font-size:11px;font-weight:700;color:#374151">{n_pocs:,}</div>'
+                f"</div>"
+                f'<div style="font-size:11px;line-height:1.4;color:#4b5563;margin-top:2px">'
+                f"Cliente marcado como epicentro. Azul = comprador; celeste = POP alto; "
+                f"gris = resto. El tamaño del punto crece con el POP.</div>"
+                f"</div></div>"
             )
         if show_pocs_foco and n_foco > 0:
             extras.append(
-                f'<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:12px">'
-                f'<span style="width:12px;height:12px;border-radius:50%;background:{COLOR_POC_FOCO};'
-                f'border:1px solid #fff;box-shadow:0 0 0 1px #333"></span>'
-                f'<span style="font-weight:600">Foco Red Bull</span>'
-                f'<span style="color:#6b7280">{n_foco:,} POCs</span></div>'
+                f'<div style="display:flex;gap:10px;margin:0 0 8px 0;align-items:flex-start">'
+                f'<span style="flex-shrink:0;width:14px;height:14px;margin-top:2px;'
+                f'border-radius:50%;background:{COLOR_POC_FOCO};border:1px solid #fff;'
+                f'box-shadow:0 0 0 1px #333"></span>'
+                f'<div style="flex:1">'
+                f'<div style="display:flex;justify-content:space-between;gap:8px">'
+                f'<div style="font-weight:800;font-size:12px;color:#111827">POC Foco Red Bull</div>'
+                f'<div style="font-size:11px;font-weight:700;color:#374151">{n_foco:,}</div>'
+                f"</div>"
+                f'<div style="font-size:11px;line-height:1.4;color:#4b5563;margin-top:2px">'
+                f"Cliente incluido en el listado de foco Red Bull "
+                f"(emparejado por cliente_id).</div>"
+                f"</div></div>"
             )
 
         body_parts = []
         if rows:
             body_parts.append(
-                f'<div style="font-size:10px;color:#6b7280;margin-bottom:4px">'
-                f"Grilla {grid_size_m}×{grid_size_m} m · solo colores visibles</div>"
+                f'<div style="font-size:10px;color:#6b7280;margin-bottom:8px;line-height:1.35">'
+                f"Celdas de {grid_size_m}×{grid_size_m} m. Prioridad de color: "
+                f"celeste → azul → verde → naranja → rojo. "
+                f"Solo se listan colores visibles con el filtro actual.</div>"
             )
             body_parts.append("".join(rows))
         if extras:
             if rows:
                 body_parts.append(
-                    '<div style="border-top:1px solid #e5e7eb;margin:6px 0 4px"></div>'
+                    '<div style="border-top:1px solid #e5e7eb;margin:4px 0 8px"></div>'
+                    '<div style="font-size:10px;font-weight:700;color:#6b7280;'
+                    'margin-bottom:6px;text-transform:uppercase;letter-spacing:0.03em">'
+                    "Puntos en el mapa</div>"
                 )
             body_parts.append("".join(extras))
 
@@ -101,7 +125,7 @@ class MapLegend(MacroElement):
         n_colors = len(items)
         summary_hint = f"{n_colors} color{'es' if n_colors != 1 else ''}"
         if n_pocs and show_pocs:
-            summary_hint += " · epic"
+            summary_hint += " · epicentro"
         if n_foco and show_pocs_foco:
             summary_hint += " · foco"
 
@@ -110,12 +134,12 @@ class MapLegend(MacroElement):
             {{% macro html(this, kwargs) %}}
             <details id="{legend_id}"{open_attr} style="
               position:absolute;bottom:12px;left:12px;z-index:9999;
-              background:rgba(255,255,255,0.96);padding:8px 10px;
-              border-radius:8px;border:1px solid #d1d5db;
-              box-shadow:0 2px 10px rgba(0,0,0,0.14);
+              background:rgba(255,255,255,0.97);padding:10px 12px;
+              border-radius:10px;border:1px solid #d1d5db;
+              box-shadow:0 2px 12px rgba(0,0,0,0.16);
               font-family:system-ui,-apple-system,Segoe UI,sans-serif;
-              width:min(280px, calc(100% - 28px));
-              max-height:min(42vh, 320px);
+              width:min(340px, calc(100% - 28px));
+              max-height:min(52vh, 420px);
               overflow:hidden;
               pointer-events:auto;">
               <summary style="
@@ -125,13 +149,14 @@ class MapLegend(MacroElement):
                 <span>Leyenda</span>
                 <span style="font-size:11px;font-weight:600;color:#6b7280">{summary_hint}</span>
               </summary>
-              <div style="margin-top:8px;max-height:min(34vh, 260px);overflow-y:auto;">
+              <div style="margin-top:10px;max-height:min(44vh, 360px);overflow-y:auto;
+                padding-right:2px;">
                 {body_html}
               </div>
             </details>
             <style>
               #{legend_id} > summary::-webkit-details-marker {{ display:none; }}
-              #{legend_id}:not([open]) {{ max-height:none; padding:7px 10px; }}
+              #{legend_id}:not([open]) {{ max-height:none; padding:7px 10px; width:auto; }}
               #{legend_id}:not([open]) > div {{ display:none; }}
             </style>
             {{% endmacro %}}
@@ -153,18 +178,33 @@ def _legend_items(
     total = len(grid_stats) or 1
 
     descriptions = {
-        "verde": f"Sin epic · ≥{umbral_pct:.0%} compradores",
-        "azul": f"Con epic · ≥{umbral_pct:.0%} compradores",
-        "celeste": f"Con epic · ≥{umbral_pct_pop:.0%} POP≥{umbral_pop:.2f}",
-        "naranja": f"Sin epic · ≥{umbral_pct_pop:.0%} POP≥{umbral_pop:.2f}",
-        "rojo": "Sin umbrales anteriores",
+        "verde": (
+            f"Sin epicentro en la celda y al menos {umbral_pct:.0%} de los clientes "
+            f"son compradores de los partners activos."
+        ),
+        "azul": (
+            f"Hay al menos un epicentro y al menos {umbral_pct:.0%} de los clientes "
+            f"son compradores (no alcanza el umbral de POP alto)."
+        ),
+        "celeste": (
+            f"Hay al menos un epicentro y al menos {umbral_pct_pop:.0%} de los clientes "
+            f"tienen POP ≥ {umbral_pop:.2f} (prioridad sobre azul)."
+        ),
+        "naranja": (
+            f"Sin epicentro y al menos {umbral_pct_pop:.0%} de los clientes tienen "
+            f"POP ≥ {umbral_pop:.2f}, pero no llegan al umbral de compradores."
+        ),
+        "rojo": (
+            "La celda no cumple los umbrales de compradores ni de POP alto "
+            "(ni con epicentro ni sin él)."
+        ),
     }
     titles = {
-        "verde": "Verde",
-        "azul": "Azul",
-        "celeste": "Celeste",
-        "naranja": "Naranja",
-        "rojo": "Rojo",
+        "verde": "Verde — compradores",
+        "azul": "Azul — compradores + epicentro",
+        "celeste": "Celeste — epicentro + POP alto",
+        "naranja": "Naranja — POP alto sin epicentro",
+        "rojo": "Rojo — resto",
     }
 
     items = []
