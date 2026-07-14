@@ -10,6 +10,7 @@ import pandas as pd
 from epicentros.config import (
     CACHE_DIR,
     COMPRADOR_L3M,
+    CSV_FOCO_REDBULL,
     CSV_FULL,
     ENV_DATA_URL,
     NO_COMPRADOR_L3M,
@@ -56,6 +57,23 @@ def _download_remote(url: str) -> Path:
     return dest
 
 
+def _load_foco_redbull_ids() -> set[str]:
+    path = CSV_FOCO_REDBULL
+    if not path.is_file():
+        return set()
+    foco = pd.read_csv(path, usecols=["cliente_id"])
+    return set(foco["cliente_id"].astype(str).str.strip())
+
+
+def _attach_foco_redbull(df: pd.DataFrame) -> pd.DataFrame:
+    """Left join lógico: marca clientes presentes en clientes_foco_redbull."""
+    out = df.copy()
+    out["cliente_id"] = out["cliente_id"].astype(str).str.strip()
+    foco_ids = _load_foco_redbull_ids()
+    out["es_foco_redbull"] = out["cliente_id"].isin(foco_ids).astype("int8")
+    return out
+
+
 def _prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
     df["cliente_id"] = df["cliente_id"].astype(str).str.strip()
@@ -82,7 +100,7 @@ def _prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     df["es_epicentro"] = df["flag_epicentro"].astype(int)
     df, _, _ = assign_grid_columns(df)
-    return df
+    return _attach_foco_redbull(df)
 
 
 def _load_from_csv(path: Path) -> pd.DataFrame:
@@ -96,6 +114,10 @@ def _load_from_parquet(path: Path) -> pd.DataFrame:
     else:
         set_grid_step_from_dataframe(df)
         df = ensure_grid_indices(df)
+        if "es_epicentro" not in df.columns and "flag_epicentro" in df.columns:
+            df = df.copy()
+            df["es_epicentro"] = df["flag_epicentro"].astype(int)
+        df = _attach_foco_redbull(df)
     return df
 
 

@@ -36,6 +36,7 @@ def main() -> None:
             "mapa_epicentros.py",
             "requirements.txt",
             "data/base_epicentros_full_grid400m.parquet",
+            "data/clientes_foco_redbull.csv",
             "data/grid_meta.json",
             "epicentros/config.py",
             "epicentros/data.py",
@@ -94,6 +95,8 @@ def main() -> None:
         df = load_full_dataset()
         assert len(df) > 100_000
         assert "grid_id" in df.columns
+        assert "es_foco_redbull" in df.columns
+        assert int(df["es_foco_redbull"].sum()) > 0
         for p in PARTNERS.values():
             assert f"{p}_flag_comprador_l3m" in df.columns
             assert f"{p}_pop" in df.columns
@@ -134,7 +137,19 @@ def main() -> None:
         scored, _, grid, pl, po = run_pipeline(
             df, list(["Red Bull"]), 1, 0.10, 0.50, 0.30, 0, ()
         )
-        build_map(scored, grid, pl, po, ["Red Bull"], 1, 0.1, 0.3, 0.5, False)
+        build_map(
+            scored,
+            grid,
+            pl,
+            po,
+            ["Red Bull"],
+            1,
+            0.1,
+            0.3,
+            0.5,
+            False,
+            show_pocs_foco=True,
+        )
 
     def filtro_colores_canonico():
         from epicentros.config import ETIQUETA_GRILLA

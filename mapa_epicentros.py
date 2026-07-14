@@ -36,7 +36,7 @@ from epicentros.scoring import canonical_etiqueta
 ETIQUETAS_GRILLA = list(ETIQUETA_GRILLA.values())
 _ETIQUETAS_SET = set(ETIQUETAS_GRILLA)
 _COLOR_KEYS = ("verde", "azul", "celeste", "naranja", "rojo")
-_DEFAULTS_VERSION = 4
+_DEFAULTS_VERSION = 5
 
 
 def _sanitize_colores_sel(raw: list[str]) -> list[str]:
@@ -62,6 +62,7 @@ def _init_session_state() -> None:
         "solo_epicentro": False,
         "segmento_sel": "Todos",
         "show_pocs": True,
+        "show_pocs_foco": True,
     }
     if st.session_state.get("_defaults_version") != _DEFAULTS_VERSION:
         for key, value in defaults.items():
@@ -97,15 +98,17 @@ def render_kpis(df, grid_stats, grid_full) -> None:
     dist = grid_stats.groupby("etiqueta_zona").size().to_dict()
 
     st.subheader("Indicadores del filtro actual")
-    r1 = st.columns(4)
+    r1 = st.columns(5)
     r1[0].metric("Clientes filtrados", f"{len(df):,}")
     r1[1].metric("Epicentros (POCs)", f"{int(df['es_epicentro'].sum()):,}")
-    r1[2].metric(
+    n_foco = int(df["es_foco_redbull"].sum()) if "es_foco_redbull" in df.columns else 0
+    r1[2].metric("Foco Red Bull", f"{n_foco:,}")
+    r1[3].metric(
         "% compradores (clientes)",
         f"{df['cumple_comprador'].mean():.1%}",
         help="Clientes que cumplen el mínimo de partners compradores",
     )
-    r1[3].metric(
+    r1[4].metric(
         "Grillas (≥2 clientes)",
         f"{n_grillas:,}",
         "todas visibles" if n_grillas == n_total else f"{n_grillas}/{n_total}",
@@ -259,6 +262,7 @@ st.sidebar.selectbox(
 )
 
 st.sidebar.checkbox("Mostrar POCs epicentro", key="show_pocs")
+st.sidebar.checkbox("Mostrar POCs Foco Red Bull", key="show_pocs_foco")
 
 st.sidebar.caption(
     f"Mín. **{MIN_CLIENTES_GRILLA} clientes** por grilla · se muestran **todas** las elegibles."
@@ -277,6 +281,7 @@ gerencias_key = tuple(st.session_state["gerencias_sel"])
 solo_epicentro = bool(st.session_state["solo_epicentro"])
 segmento_sel = st.session_state["segmento_sel"]
 show_pocs = bool(st.session_state["show_pocs"])
+show_pocs_foco = bool(st.session_state["show_pocs_foco"])
 
 result = cached_pipeline(
     partners_key,
@@ -323,6 +328,7 @@ folium_map = build_map(
     umbral_pct_pop,
     umbral_pop,
     show_pocs=show_pocs,
+    show_pocs_foco=show_pocs_foco,
 )
 
 map_key = _map_render_key(
@@ -337,6 +343,7 @@ map_key = _map_render_key(
     segmento=segmento_sel,
     colores=tuple(colores_sel),
     show_pocs=show_pocs,
+    show_pocs_foco=show_pocs_foco,
     n_grillas=len(grid_stats),
     color_sig=tuple(grid_stats["color_grilla"].value_counts().items()),
 )

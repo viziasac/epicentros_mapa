@@ -6,7 +6,14 @@ from branca.element import MacroElement
 from folium.plugins import MarkerCluster
 from jinja2 import Template
 
-from epicentros.config import COLOR_GRILLA, COLOR_POC, ETIQUETA_GRILLA, GRID_SIZE_M, PARTNERS
+from epicentros.config import (
+    COLOR_GRILLA,
+    COLOR_POC,
+    COLOR_POC_FOCO,
+    ETIQUETA_GRILLA,
+    GRID_SIZE_M,
+    PARTNERS,
+)
 from epicentros.geojson import grids_to_geojson
 
 _COLOR_ORDER = ("verde", "azul", "celeste", "naranja", "rojo")
@@ -20,6 +27,7 @@ class MapLegend(MacroElement):
         items: list[dict],
         *,
         show_pocs: bool = True,
+        show_pocs_foco: bool = True,
         grid_size_m: int = GRID_SIZE_M,
     ):
         super().__init__()
@@ -58,6 +66,17 @@ class MapLegend(MacroElement):
                 "</div>"
             )
 
+        foco_block = ""
+        if show_pocs_foco:
+            foco_block = (
+                '<div style="border-top:1px solid #e5e7eb;margin-top:10px;padding-top:10px">'
+                '<div style="font-weight:700;font-size:13px;margin-bottom:6px">POCs Foco Red Bull</div>'
+                f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px">'
+                f'<span style="width:14px;height:14px;border-radius:50%;background:{COLOR_POC_FOCO};'
+                f'border:2px solid #fff;box-shadow:0 0 0 1px #333"></span>Cliente foco</div>'
+                "</div>"
+            )
+
         rows_html = "".join(rows)
         self._template = Template(
             f"""
@@ -78,6 +97,7 @@ class MapLegend(MacroElement):
               </div>
               {rows_html}
               {poc_block}
+              {foco_block}
             </div>
             {{% endmacro %}}
             """
@@ -158,6 +178,7 @@ def build_map(
     umbral_pct_pop: float,
     umbral_pop: float,
     show_pocs: bool = True,
+    show_pocs_foco: bool = True,
 ) -> folium.Map:
     centro_lat, centro_lon, zoom = _map_center(df)
 
@@ -196,7 +217,9 @@ def build_map(
         ).add_to(m)
 
     legend_items = _legend_items(grid_stats, umbral_pct, umbral_pct_pop, umbral_pop)
-    m.get_root().add_child(MapLegend(legend_items, show_pocs=show_pocs))
+    m.get_root().add_child(
+        MapLegend(legend_items, show_pocs=show_pocs, show_pocs_foco=show_pocs_foco)
+    )
 
     if show_pocs:
         pocs = df[df["es_epicentro"] == 1]
@@ -238,6 +261,41 @@ def build_map(
                     tooltip=folium.Tooltip(html, sticky=True),
                 ).add_to(cluster)
             fg.add_to(m)
+
+    if show_pocs_foco and "es_foco_redbull" in df.columns:
+        focos = df[df["es_foco_redbull"] == 1]
+        if not focos.empty:
+            fg_foco = folium.FeatureGroup(name="POCs Foco Red Bull", show=True)
+            cluster_foco = MarkerCluster(
+                disableClusteringAtZoom=14,
+                maxClusterRadius=40,
+                spiderfyOnMaxZoom=True,
+            ).add_to(fg_foco)
+
+            for row in focos.itertuples(index=False):
+                pop = float(getattr(row, "pop_promedio", 0) or 0)
+                radius = 8 + min(pop, 1.0) * 4
+                html = (
+                    f"<div style='font-size:13px'>"
+                    f"<b>Foco Red Bull</b> · {row.cliente_id}<br>"
+                    f"<b>Canal:</b> {getattr(row, 'canal', '')}<br>"
+                    f"{_partner_lines(row, selected_partners)}"
+                    f"<b>POP prom.:</b> {pop:.3f}<br>"
+                    f"<b>NR Backus:</b> S/ {getattr(row, 'total_soles_backus_l3m', 0):,.0f}<br>"
+                    f"<b>NR MP:</b> S/ {getattr(row, 'total_soles_marketplace_l3m', 0):,.0f}"
+                    f"</div>"
+                )
+                folium.CircleMarker(
+                    location=[float(row.latitud), float(row.longitud)],
+                    radius=radius,
+                    color="#ffffff",
+                    fill=True,
+                    fill_color=COLOR_POC_FOCO,
+                    fill_opacity=1.0,
+                    weight=2.5,
+                    tooltip=folium.Tooltip(html, sticky=True),
+                ).add_to(cluster_foco)
+            fg_foco.add_to(m)
 
     folium.LayerControl(collapsed=False).add_to(m)
     return m

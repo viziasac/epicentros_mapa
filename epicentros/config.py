@@ -23,6 +23,10 @@ if not CSV_FULL.is_file():
 PARQUET_LOCAL = ROOT_DIR / PARQUET_NAME
 PARQUET_FULL = PARQUET_BUNDLED if PARQUET_BUNDLED.is_file() else PARQUET_LOCAL
 
+CSV_FOCO_REDBULL = DATA_DIR / "clientes_foco_redbull.csv"
+if not CSV_FOCO_REDBULL.is_file():
+    CSV_FOCO_REDBULL = ROOT_DIR / "clientes_foco_redbull.csv"
+
 ENV_DATA_URL = "EPICENTROS_DATA_URL"
 
 PARTNERS = {
@@ -60,6 +64,7 @@ ETIQUETA_GRILLA = {
 }
 
 COLOR_POC = "#2563eb"
+COLOR_POC_FOCO = "#eab308"
 MAX_GRILLAS_RENDER = 0
 
 
