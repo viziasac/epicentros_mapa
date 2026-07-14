@@ -182,8 +182,31 @@ def main() -> None:
         )
         assert not grid_bad.empty
 
+    def leyenda_dinamica():
+        from epicentros.config import ETIQUETA_GRILLA
+        from epicentros.data import load_full_dataset
+        from epicentros.mapa import MapLegend, _legend_items
+        from epicentros.pipeline import run_pipeline
+
+        df = load_full_dataset().head(8_000)
+        _, _, grid, _, _ = run_pipeline(
+            df, ["Red Bull"], 1, 0.10, 0.50, 0.30, 0, (ETIQUETA_GRILLA["verde"],)
+        )
+        items = _legend_items(grid, 0.10, 0.30, 0.50)
+        assert items, "Leyenda vacía con grillas verdes"
+        assert all(item["count"] > 0 for item in items)
+        titles = {item["title"] for item in items}
+        assert titles == {"Verde"}
+
+        empty_items = _legend_items(grid.iloc[0:0], 0.10, 0.30, 0.50)
+        assert empty_items == []
+
+        legend = MapLegend(items, show_pocs=False, show_pocs_foco=True, n_foco=3)
+        assert legend._template is not None
+
     check("Carga de datos", data)
     check("Filtro colores canónico", filtro_colores_canonico)
+    check("Leyenda dinámica", leyenda_dinamica)
     check("Simulación Streamlit Cloud", cloud_sim)
     check("Render mapa Folium", mapa_render)
     print("\n=== OK — listo para local y Streamlit Cloud ===")

@@ -95,7 +95,7 @@ def _color_metric_html(key: str, count: int, pct: float) -> str:
 def render_kpis(df, grid_stats, grid_full) -> None:
     n_grillas = len(grid_stats)
     n_total = len(grid_full)
-    dist = grid_stats.groupby("etiqueta_zona").size().to_dict()
+    dist = grid_stats.groupby("etiqueta_zona").size().to_dict() if not grid_stats.empty else {}
 
     st.subheader("Indicadores del filtro actual")
     r1 = st.columns(5)
@@ -114,12 +114,16 @@ def render_kpis(df, grid_stats, grid_full) -> None:
         "todas visibles" if n_grillas == n_total else f"{n_grillas}/{n_total}",
     )
 
-    r2 = st.columns(5)
-    for col, key in zip(r2, _COLOR_KEYS):
-        label = ETIQUETA_GRILLA[key]
-        count = int(dist.get(label, 0))
-        pct = (count / n_grillas * 100) if n_grillas else 0.0
-        col.markdown(_color_metric_html(key, count, pct), unsafe_allow_html=True)
+    active_colors = [
+        key for key in _COLOR_KEYS if int(dist.get(ETIQUETA_GRILLA[key], 0)) > 0
+    ]
+    if active_colors:
+        r2 = st.columns(len(active_colors))
+        for col, key in zip(r2, active_colors):
+            label = ETIQUETA_GRILLA[key]
+            count = int(dist.get(label, 0))
+            pct = (count / n_grillas * 100) if n_grillas else 0.0
+            col.markdown(_color_metric_html(key, count, pct), unsafe_allow_html=True)
 
 
 @st.cache_data(show_spinner="Cargando datos…")
@@ -236,7 +240,6 @@ st.sidebar.slider(
 st.sidebar.multiselect(
     "Mostrar grillas",
     ETIQUETAS_GRILLA,
-    default=ETIQUETAS_GRILLA,
     key="colores_sel",
 )
 
@@ -357,7 +360,8 @@ st_folium(
 )
 
 st.caption(
-    f"Grilla **{GRID_SIZE_M}×{GRID_SIZE_M} m** · Los colores, KPIs y leyenda se actualizan al cambiar cualquier filtro. "
+    f"Grilla **{GRID_SIZE_M}×{GRID_SIZE_M} m** · Haz clic en **Leyenda** (esquina inferior izquierda) "
+    f"para mostrar/ocultar · se actualiza con los filtros. "
     f"Umbrales: compradores ≥{umbral_pct:.0%}, POP cliente ≥{umbral_pop:.2f}, "
     f"% POP alto en grilla ≥{umbral_pct_pop:.0%}."
 )

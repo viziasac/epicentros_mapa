@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import html
+import uuid
+
 import folium
 import pandas as pd
 from branca.element import MacroElement
@@ -20,7 +23,7 @@ _COLOR_ORDER = ("verde", "azul", "celeste", "naranja", "rojo")
 
 
 class MapLegend(MacroElement):
-    """Leyenda HTML anclada al mapa (no al viewport del navegador)."""
+    """Leyenda compacta, colapsable y filtrada por lo visible en el mapa."""
 
     def __init__(
         self,
@@ -28,77 +31,109 @@ class MapLegend(MacroElement):
         *,
         show_pocs: bool = True,
         show_pocs_foco: bool = True,
+        n_pocs: int = 0,
+        n_foco: int = 0,
         grid_size_m: int = GRID_SIZE_M,
+        start_open: bool = False,
     ):
         super().__init__()
         self._name = "MapLegend"
+        legend_id = f"epic-legend-{uuid.uuid4().hex[:8]}"
 
         rows = []
         for item in items:
+            title = html.escape(str(item["title"]))
+            desc = html.escape(str(item["desc"]))
+            color = html.escape(str(item["color"]))
             rows.append(
-                f'<div style="display:flex;align-items:flex-start;gap:10px;margin:8px 0">'
-                f'<span style="flex-shrink:0;width:22px;height:22px;border-radius:4px;'
-                f'background:{item["color"]};border:2px solid #1f2937;'
-                f'margin-top:1px"></span>'
-                f'<div style="line-height:1.35">'
-                f'<div style="font-weight:700;font-size:14px;color:#111827">{item["title"]}</div>'
-                f'<div style="font-size:12px;color:#4b5563">{item["desc"]}</div>'
-                f'<div style="font-size:12px;font-weight:600;color:#374151;margin-top:2px">'
-                f'{item["count"]:,} grillas · {item["pct"]:.1f}%</div>'
-                f"</div></div>"
+                f'<div style="display:flex;align-items:center;gap:8px;margin:3px 0;'
+                f'font-size:12px;line-height:1.25" title="{desc}">'
+                f'<span style="flex-shrink:0;width:12px;height:12px;border-radius:2px;'
+                f'background:{color};border:1px solid #111827"></span>'
+                f'<span style="font-weight:700;color:#111827;min-width:58px">{title}</span>'
+                f'<span style="color:#4b5563;flex:1;overflow:hidden;'
+                f'text-overflow:ellipsis;white-space:nowrap">{desc}</span>'
+                f'<span style="flex-shrink:0;font-weight:600;color:#374151">'
+                f'{item["count"]:,} · {item["pct"]:.0f}%</span>'
+                f"</div>"
             )
 
-        poc_block = ""
-        if show_pocs:
-            poc_block = (
-                '<div style="border-top:1px solid #e5e7eb;margin-top:10px;padding-top:10px">'
-                '<div style="font-weight:700;font-size:13px;margin-bottom:6px">POCs epicentro</div>'
-                f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px">'
-                f'<span style="width:14px;height:14px;border-radius:50%;background:{COLOR_POC};'
-                f'border:2px solid #fff;box-shadow:0 0 0 1px #333"></span>Comprador</div>'
-                '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px">'
-                '<span style="width:14px;height:14px;border-radius:50%;background:#06b6d4;'
-                'border:2px solid #fff;box-shadow:0 0 0 1px #333"></span>POP alto</div>'
-                '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px">'
-                '<span style="width:14px;height:14px;border-radius:50%;background:#9ca3af;'
-                'border:2px solid #fff;box-shadow:0 0 0 1px #333"></span>Otros</div>'
-                '<div style="font-size:11px;color:#6b7280;margin-top:4px">Tamaño ∝ POP</div>'
-                "</div>"
+        extras = []
+        if show_pocs and n_pocs > 0:
+            extras.append(
+                f'<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:12px">'
+                f'<span style="width:12px;height:12px;border-radius:50%;background:{COLOR_POC};'
+                f'border:1px solid #fff;box-shadow:0 0 0 1px #333"></span>'
+                f'<span style="font-weight:600">Epicentro</span>'
+                f'<span style="color:#6b7280">{n_pocs:,} POCs</span></div>'
+            )
+        if show_pocs_foco and n_foco > 0:
+            extras.append(
+                f'<div style="display:flex;align-items:center;gap:8px;margin:3px 0;font-size:12px">'
+                f'<span style="width:12px;height:12px;border-radius:50%;background:{COLOR_POC_FOCO};'
+                f'border:1px solid #fff;box-shadow:0 0 0 1px #333"></span>'
+                f'<span style="font-weight:600">Foco Red Bull</span>'
+                f'<span style="color:#6b7280">{n_foco:,} POCs</span></div>'
             )
 
-        foco_block = ""
-        if show_pocs_foco:
-            foco_block = (
-                '<div style="border-top:1px solid #e5e7eb;margin-top:10px;padding-top:10px">'
-                '<div style="font-weight:700;font-size:13px;margin-bottom:6px">POCs Foco Red Bull</div>'
-                f'<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px">'
-                f'<span style="width:14px;height:14px;border-radius:50%;background:{COLOR_POC_FOCO};'
-                f'border:2px solid #fff;box-shadow:0 0 0 1px #333"></span>Cliente foco</div>'
-                "</div>"
+        body_parts = []
+        if rows:
+            body_parts.append(
+                f'<div style="font-size:10px;color:#6b7280;margin-bottom:4px">'
+                f"Grilla {grid_size_m}×{grid_size_m} m · solo colores visibles</div>"
             )
+            body_parts.append("".join(rows))
+        if extras:
+            if rows:
+                body_parts.append(
+                    '<div style="border-top:1px solid #e5e7eb;margin:6px 0 4px"></div>'
+                )
+            body_parts.append("".join(extras))
 
-        rows_html = "".join(rows)
+        if not body_parts:
+            body_html = (
+                '<div style="font-size:12px;color:#6b7280">Sin capas visibles</div>'
+            )
+        else:
+            body_html = "".join(body_parts)
+
+        open_attr = " open" if start_open else ""
+        n_colors = len(items)
+        summary_hint = f"{n_colors} color{'es' if n_colors != 1 else ''}"
+        if n_pocs and show_pocs:
+            summary_hint += " · epic"
+        if n_foco and show_pocs_foco:
+            summary_hint += " · foco"
+
         self._template = Template(
             f"""
             {{% macro html(this, kwargs) %}}
-            <div id="epicentros-legend" style="
-              position:absolute;bottom:14px;left:14px;z-index:9999;
-              background:rgba(255,255,255,0.97);padding:14px 16px;
-              border-radius:10px;border:2px solid #d1d5db;
-              box-shadow:0 4px 16px rgba(0,0,0,0.18);
+            <details id="{legend_id}"{open_attr} style="
+              position:absolute;bottom:12px;left:12px;z-index:9999;
+              background:rgba(255,255,255,0.96);padding:8px 10px;
+              border-radius:8px;border:1px solid #d1d5db;
+              box-shadow:0 2px 10px rgba(0,0,0,0.14);
               font-family:system-ui,-apple-system,Segoe UI,sans-serif;
-              min-width:300px;max-width:340px;max-height:88%;
-              overflow-y:auto;pointer-events:auto;">
-              <div style="font-size:16px;font-weight:800;color:#111827;margin-bottom:4px">
-                Leyenda de colores
+              width:min(280px, calc(100% - 28px));
+              max-height:min(42vh, 320px);
+              overflow:hidden;
+              pointer-events:auto;">
+              <summary style="
+                cursor:pointer;list-style:none;display:flex;align-items:center;
+                justify-content:space-between;gap:8px;user-select:none;
+                font-size:13px;font-weight:800;color:#111827;">
+                <span>Leyenda</span>
+                <span style="font-size:11px;font-weight:600;color:#6b7280">{summary_hint}</span>
+              </summary>
+              <div style="margin-top:8px;max-height:min(34vh, 260px);overflow-y:auto;">
+                {body_html}
               </div>
-              <div style="font-size:11px;color:#6b7280;margin-bottom:6px">
-                Grilla {grid_size_m}×{grid_size_m} m · opacidad = intensidad
-              </div>
-              {rows_html}
-              {poc_block}
-              {foco_block}
-            </div>
+            </details>
+            <style>
+              #{legend_id} > summary::-webkit-details-marker {{ display:none; }}
+              #{legend_id}:not([open]) {{ max-height:none; padding:7px 10px; }}
+              #{legend_id}:not([open]) > div {{ display:none; }}
+            </style>
             {{% endmacro %}}
             """
         )
@@ -110,19 +145,19 @@ def _legend_items(
     umbral_pct_pop: float,
     umbral_pop: float,
 ) -> list[dict]:
-    counts = grid_stats.groupby("etiqueta_zona").size().to_dict() if not grid_stats.empty else {}
+    """Solo colores con grillas visibles tras los filtros actuales."""
+    if grid_stats.empty:
+        return []
+
+    counts = grid_stats.groupby("etiqueta_zona").size().to_dict()
     total = len(grid_stats) or 1
 
     descriptions = {
-        "verde": f"Sin epicentro · ≥{umbral_pct:.0%} clientes compradores",
-        "azul": f"Con epicentro · ≥{umbral_pct:.0%} clientes compradores",
-        "celeste": (
-            f"Con epicentro · ≥{umbral_pct_pop:.0%} clientes con POP ≥{umbral_pop:.2f}"
-        ),
-        "naranja": (
-            f"Sin epicentro · ≥{umbral_pct_pop:.0%} clientes con POP ≥{umbral_pop:.2f}"
-        ),
-        "rojo": "No cumple ninguna condición anterior",
+        "verde": f"Sin epic · ≥{umbral_pct:.0%} compradores",
+        "azul": f"Con epic · ≥{umbral_pct:.0%} compradores",
+        "celeste": f"Con epic · ≥{umbral_pct_pop:.0%} POP≥{umbral_pop:.2f}",
+        "naranja": f"Sin epic · ≥{umbral_pct_pop:.0%} POP≥{umbral_pop:.2f}",
+        "rojo": "Sin umbrales anteriores",
     }
     titles = {
         "verde": "Verde",
@@ -136,6 +171,8 @@ def _legend_items(
     for key in _COLOR_ORDER:
         label = ETIQUETA_GRILLA[key]
         count = int(counts.get(label, 0))
+        if count <= 0:
+            continue
         items.append(
             {
                 "color": COLOR_GRILLA[key],
@@ -149,6 +186,8 @@ def _legend_items(
 
 
 def _map_center(df: pd.DataFrame) -> tuple[float, float, int]:
+    if df.empty:
+        return -12.0, -77.0, 6
     lat = float(df["latitud"].mean())
     lon = float(df["longitud"].mean())
     span = max(
@@ -165,6 +204,122 @@ def _map_center(df: pd.DataFrame) -> tuple[float, float, int]:
     else:
         zoom = 12
     return lat, lon, zoom
+
+
+def _add_poc_layer(
+    m: folium.Map,
+    pocs: pd.DataFrame,
+    *,
+    name: str,
+    selected_partners: list[str],
+    fill_color_fn,
+    title: str,
+) -> None:
+    if pocs.empty:
+        return
+
+    fg = folium.FeatureGroup(name=name, show=True)
+    cluster = MarkerCluster(
+        disableClusteringAtZoom=14,
+        maxClusterRadius=40,
+        spiderfyOnMaxZoom=True,
+    ).add_to(fg)
+
+    lat = pocs["latitud"].to_numpy(dtype=float)
+    lon = pocs["longitud"].to_numpy(dtype=float)
+    pop = pocs["pop_promedio"].to_numpy(dtype=float) if "pop_promedio" in pocs.columns else None
+    cliente_id = pocs["cliente_id"].astype(str).to_numpy()
+    canal = (
+        pocs["canal"].astype(str).to_numpy()
+        if "canal" in pocs.columns
+        else [""] * len(pocs)
+    )
+    backus = (
+        pocs["total_soles_backus_l3m"].to_numpy(dtype=float)
+        if "total_soles_backus_l3m" in pocs.columns
+        else [0.0] * len(pocs)
+    )
+    mp = (
+        pocs["total_soles_marketplace_l3m"].to_numpy(dtype=float)
+        if "total_soles_marketplace_l3m" in pocs.columns
+        else [0.0] * len(pocs)
+    )
+
+    partner_cols = []
+    for pname in selected_partners:
+        prefix = PARTNERS[pname]
+        flag_col = f"{prefix}_flag_comprador_l3m"
+        pop_col = f"{prefix}_pop"
+        partner_cols.append(
+            (
+                pname,
+                pocs[flag_col].astype(str).to_numpy()
+                if flag_col in pocs.columns
+                else None,
+                pocs[pop_col].to_numpy(dtype=float) if pop_col in pocs.columns else None,
+            )
+        )
+
+    cumple_comprador = (
+        pocs["cumple_comprador"].to_numpy()
+        if "cumple_comprador" in pocs.columns
+        else None
+    )
+    cumple_pop = (
+        pocs["cumple_pop_alto"].to_numpy() if "cumple_pop_alto" in pocs.columns else None
+    )
+    partners_comp = (
+        pocs["partners_compradores"].to_numpy()
+        if "partners_compradores" in pocs.columns
+        else None
+    )
+    n_partners = (
+        pocs["n_partners_sel"].to_numpy() if "n_partners_sel" in pocs.columns else None
+    )
+
+    for i in range(len(pocs)):
+        pop_i = float(pop[i]) if pop is not None else 0.0
+        radius = 7 + min(pop_i, 1.0) * 5
+        fill = fill_color_fn(
+            i,
+            cumple_comprador,
+            cumple_pop,
+        )
+        partner_html = []
+        for pname, flags, pops in partner_cols:
+            flag = flags[i] if flags is not None else "No Comprador L3M"
+            pp = float(pops[i]) if pops is not None else 0.0
+            partner_html.append(f"<b>{html.escape(pname)}:</b> {html.escape(str(flag))} · POP {pp:.3f}<br>")
+
+        extra = ""
+        if partners_comp is not None and n_partners is not None and cumple_comprador is not None:
+            extra = (
+                f"<b>Comprador:</b> {'Sí' if bool(cumple_comprador[i]) else 'No'} "
+                f"({int(partners_comp[i])}/{int(n_partners[i])})<br>"
+            )
+
+        tip = (
+            f"<div style='font-size:12px'>"
+            f"<b>{html.escape(title)}</b> · {html.escape(cliente_id[i])}<br>"
+            f"<b>Canal:</b> {html.escape(str(canal[i]))}<br>"
+            f"{extra}{''.join(partner_html)}"
+            f"<b>POP prom.:</b> {pop_i:.3f}<br>"
+            f"<b>NR Backus:</b> S/ {float(backus[i]):,.0f}<br>"
+            f"<b>NR MP:</b> S/ {float(mp[i]):,.0f}"
+            f"</div>"
+        )
+        folium.CircleMarker(
+            location=[float(lat[i]), float(lon[i])],
+            radius=radius,
+            color="#ffffff",
+            fill=True,
+            fill_color=fill,
+            fill_opacity=1.0,
+            weight=2.5,
+            tooltip=folium.Tooltip(tip, sticky=True),
+        ).add_to(cluster)
+
+    fg.add_to(m)
 
 
 def build_map(
@@ -216,96 +371,56 @@ def build_map(
             ),
         ).add_to(m)
 
-    legend_items = _legend_items(grid_stats, umbral_pct, umbral_pct_pop, umbral_pop)
-    m.get_root().add_child(
-        MapLegend(legend_items, show_pocs=show_pocs, show_pocs_foco=show_pocs_foco)
+    n_pocs = int((df["es_epicentro"] == 1).sum()) if "es_epicentro" in df.columns else 0
+    n_foco = (
+        int((df["es_foco_redbull"] == 1).sum())
+        if "es_foco_redbull" in df.columns
+        else 0
     )
 
-    if show_pocs:
-        pocs = df[df["es_epicentro"] == 1]
-        if not pocs.empty:
-            fg = folium.FeatureGroup(name="POCs Epicentro", show=True)
-            cluster = MarkerCluster(
-                disableClusteringAtZoom=14,
-                maxClusterRadius=40,
-                spiderfyOnMaxZoom=True,
-            ).add_to(fg)
+    legend_items = _legend_items(grid_stats, umbral_pct, umbral_pct_pop, umbral_pop)
+    m.get_root().add_child(
+        MapLegend(
+            legend_items,
+            show_pocs=show_pocs,
+            show_pocs_foco=show_pocs_foco,
+            n_pocs=n_pocs if show_pocs else 0,
+            n_foco=n_foco if show_pocs_foco else 0,
+            start_open=False,
+        )
+    )
 
-            for row in pocs.itertuples(index=False):
-                pop = float(row.pop_promedio)
-                radius = 7 + min(pop, 1.0) * 5
-                comprador = bool(row.cumple_comprador)
-                fill = "#06b6d4" if row.cumple_pop_alto else (
-                    COLOR_POC if comprador else "#9ca3af"
-                )
-                html = (
-                    f"<div style='font-size:13px'>"
-                    f"<b>Epicentro</b> · {row.cliente_id}<br>"
-                    f"<b>Canal:</b> {row.canal}<br>"
-                    f"<b>Comprador:</b> {'Sí' if comprador else 'No'} "
-                    f"({int(row.partners_compradores)}/{int(row.n_partners_sel)})<br>"
-                    f"{_partner_lines(row, selected_partners)}"
-                    f"<b>POP prom.:</b> {pop:.3f}<br>"
-                    f"<b>NR Backus:</b> S/ {row.total_soles_backus_l3m:,.0f}<br>"
-                    f"<b>NR MP:</b> S/ {row.total_soles_marketplace_l3m:,.0f}"
-                    f"</div>"
-                )
-                folium.CircleMarker(
-                    location=[float(row.latitud), float(row.longitud)],
-                    radius=radius,
-                    color="#ffffff",
-                    fill=True,
-                    fill_color=fill,
-                    fill_opacity=1.0,
-                    weight=2.5,
-                    tooltip=folium.Tooltip(html, sticky=True),
-                ).add_to(cluster)
-            fg.add_to(m)
+    if show_pocs and n_pocs > 0:
 
-    if show_pocs_foco and "es_foco_redbull" in df.columns:
-        focos = df[df["es_foco_redbull"] == 1]
-        if not focos.empty:
-            fg_foco = folium.FeatureGroup(name="POCs Foco Red Bull", show=True)
-            cluster_foco = MarkerCluster(
-                disableClusteringAtZoom=14,
-                maxClusterRadius=40,
-                spiderfyOnMaxZoom=True,
-            ).add_to(fg_foco)
+        def epic_fill(i, cumple_comprador, cumple_pop):
+            if cumple_pop is not None and bool(cumple_pop[i]):
+                return "#06b6d4"
+            if cumple_comprador is not None and bool(cumple_comprador[i]):
+                return COLOR_POC
+            return "#9ca3af"
 
-            for row in focos.itertuples(index=False):
-                pop = float(getattr(row, "pop_promedio", 0) or 0)
-                radius = 8 + min(pop, 1.0) * 4
-                html = (
-                    f"<div style='font-size:13px'>"
-                    f"<b>Foco Red Bull</b> · {row.cliente_id}<br>"
-                    f"<b>Canal:</b> {getattr(row, 'canal', '')}<br>"
-                    f"{_partner_lines(row, selected_partners)}"
-                    f"<b>POP prom.:</b> {pop:.3f}<br>"
-                    f"<b>NR Backus:</b> S/ {getattr(row, 'total_soles_backus_l3m', 0):,.0f}<br>"
-                    f"<b>NR MP:</b> S/ {getattr(row, 'total_soles_marketplace_l3m', 0):,.0f}"
-                    f"</div>"
-                )
-                folium.CircleMarker(
-                    location=[float(row.latitud), float(row.longitud)],
-                    radius=radius,
-                    color="#ffffff",
-                    fill=True,
-                    fill_color=COLOR_POC_FOCO,
-                    fill_opacity=1.0,
-                    weight=2.5,
-                    tooltip=folium.Tooltip(html, sticky=True),
-                ).add_to(cluster_foco)
-            fg_foco.add_to(m)
+        _add_poc_layer(
+            m,
+            df[df["es_epicentro"] == 1],
+            name="POCs Epicentro",
+            selected_partners=selected_partners,
+            fill_color_fn=epic_fill,
+            title="Epicentro",
+        )
 
-    folium.LayerControl(collapsed=False).add_to(m)
+    if show_pocs_foco and n_foco > 0 and "es_foco_redbull" in df.columns:
+
+        def foco_fill(i, cumple_comprador, cumple_pop):
+            return COLOR_POC_FOCO
+
+        _add_poc_layer(
+            m,
+            df[df["es_foco_redbull"] == 1],
+            name="POCs Foco Red Bull",
+            selected_partners=selected_partners,
+            fill_color_fn=foco_fill,
+            title="Foco Red Bull",
+        )
+
+    folium.LayerControl(collapsed=True).add_to(m)
     return m
-
-
-def _partner_lines(row, selected_partners: list[str]) -> str:
-    lines = []
-    for name in selected_partners:
-        p = PARTNERS[name]
-        flag = getattr(row, f"{p}_flag_comprador_l3m", "No Comprador L3M")
-        pop = getattr(row, f"{p}_pop", 0)
-        lines.append(f"<b>{name}:</b> {flag} · POP {pop:.3f}<br>")
-    return "".join(lines)
